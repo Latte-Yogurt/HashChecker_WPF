@@ -1,0 +1,81 @@
+<Window x:Class="HashChecker.OptionsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="选项"
+        Width="480" Height="400"
+        MinWidth="440" MinHeight="370"
+        ResizeMode="CanMinimize"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        TextOptions.TextFormattingMode="Display"
+        FontFamily="Microsoft YaHei UI, Segoe UI"
+        FontSize="12">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="LblThreads" Grid.Column="0" Text="线程数"
+                       VerticalAlignment="Center" Margin="0,0,10,0" />
+            <Slider x:Name="ThreadSlider" Grid.Column="1" Height="24"
+                    VerticalAlignment="Center" IsSnapToTickEnabled="True"
+                    TickFrequency="1" Minimum="1" Maximum="16"
+                    ValueChanged="ThreadSlider_ValueChanged" />
+            <TextBlock x:Name="ThreadValue" Grid.Column="2" Text="1" Width="36"
+                       TextAlignment="Right" VerticalAlignment="Center" />
+        </Grid>
+
+        <TextBlock x:Name="ThreadHint" Grid.Row="1" Text=""
+                   Margin="0,4,0,10" TextWrapping="Wrap"
+                   Foreground="#7A7A7A" FontSize="11" />
+
+        <Grid Grid.Row="2" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="LblDefaultAlgorithm" Grid.Column="0" Text="默认算法"
+                       VerticalAlignment="Center" Margin="0,0,10,0" />
+            <ComboBox x:Name="AlgorithmPicker" Grid.Column="1" Height="24"
+                      VerticalAlignment="Center"
+                      DisplayMemberPath="DisplayName" />
+        </Grid>
+
+        <CheckBox x:Name="ChkUpperCase" Grid.Row="3" Content="以大写形式显示与保存摘要值"
+                  Margin="0,0,0,8" />
+        <CheckBox x:Name="ChkAutoStart" Grid.Row="4" Content="添加文件后自动开始计算"
+                  Margin="0,0,0,8" />
+        <CheckBox x:Name="ChkAutoCompanion" Grid.Row="5" Content="自动载入同目录的校验记录（不要求同名或带扩展名）"
+                  Margin="0,0,0,8" />
+        <CheckBox x:Name="ChkBom" Grid.Row="6" Content="校验记录使用 UTF-8 BOM"
+                  Margin="0,0,0,8" />
+        <CheckBox x:Name="ChkRememberPlacement" Grid.Row="7" Content="记住窗口位置与大小"
+                  Margin="0,0,0,8" />
+
+        <StackPanel Grid.Row="9" Orientation="Horizontal" HorizontalAlignment="Right"
+                    Margin="0,10,0,0">
+            <Button x:Name="BtnOk" Content="确定" Width="88" Height="28" Margin="0,0,8,0"
+                    IsDefault="True" Click="Ok_Click" />
+            <Button x:Name="BtnCancel" Content="取消" Width="88" Height="28"
+                    IsCancel="True" Click="Cancel_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

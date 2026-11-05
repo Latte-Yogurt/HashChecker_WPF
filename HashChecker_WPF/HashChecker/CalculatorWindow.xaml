@@ -1,0 +1,74 @@
+<Window x:Class="HashChecker.CalculatorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="摘要计算器"
+        Width="620" Height="420"
+        MinWidth="480" MinHeight="320"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        TextOptions.TextFormattingMode="Display"
+        FontFamily="Microsoft YaHei UI, Segoe UI"
+        FontSize="12">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
+            <TextBlock x:Name="LblAlgorithmCaption" Text="算法：" VerticalAlignment="Center"
+                       Margin="0,0,6,0" />
+            <ComboBox x:Name="AlgorithmPicker" Width="150" Height="24"
+                      VerticalAlignment="Center"
+                      DisplayMemberPath="DisplayName"
+                      SelectionChanged="AlgorithmPicker_SelectionChanged" />
+        </StackPanel>
+
+        <TextBlock x:Name="LblTextCaption" Grid.Row="2" Text="文本（按 UTF-8 编码）："
+                   Margin="0,0,0,4" />
+
+        <TextBox x:Name="InputText" Grid.Row="3" Margin="0,0,0,8"
+                 AcceptsReturn="True" TextWrapping="Wrap"
+                 VerticalScrollBarVisibility="Auto"
+                 Padding="6,4"
+                 TextChanged="Input_TextChanged" />
+
+        <TextBlock x:Name="LblResultCaption" Grid.Row="4" Text="摘要值："
+                   Margin="0,0,0,4" />
+
+        <TextBox x:Name="ResultBox" Grid.Row="5" Height="28" Padding="6,4"
+                 IsReadOnly="True" Background="#F5F5F5"
+                 FontFamily="Consolas, Courier New" FontSize="12"
+                 HorizontalScrollBarVisibility="Auto" />
+
+        <TextBlock x:Name="FileText" Grid.Row="6" Text=""
+                   Margin="0,6,0,0" Foreground="#7A7A7A" FontSize="11"
+                   TextTrimming="CharacterEllipsis" />
+
+        <TextBlock x:Name="HintText" Grid.Row="7" Text=""
+                   Margin="0,6,0,0" Foreground="#7A7A7A" FontSize="11"
+                   TextWrapping="Wrap" />
+
+        <StackPanel Grid.Row="8" Orientation="Horizontal" HorizontalAlignment="Right"
+                    Margin="0,12,0,0">
+            <Button x:Name="BtnFromFile" Content="从文件计算..." Width="110" Height="28"
+                    Margin="0,0,8,0" Click="FromFile_Click" />
+            <Button x:Name="BtnCompute" Content="计算" Width="80" Height="28"
+                    Margin="0,0,8,0" IsDefault="True" Click="Compute_Click" />
+            <Button x:Name="BtnCopy" Content="复制" Width="80" Height="28"
+                    Margin="0,0,8,0" Click="Copy_Click" />
+            <Button x:Name="BtnClose" Content="关闭" Width="80" Height="28"
+                    IsCancel="True" Click="Close_Click" />
+        </StackPanel>
+    </Grid>
+</Window>
