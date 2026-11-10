@@ -24,7 +24,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 WORKSPACE = HERE.parent
-PROJECT = WORKSPACE / "HashChecker"
+# 产品工程在「工程根\HashChecker_WPF\HashChecker」：解决方案目录外面还套了一层，
+# 原来直接取 WORKSPACE/"HashChecker"，默认路径必然找不到被测程序。
+PROJECT = WORKSPACE / "HashChecker_WPF" / "HashChecker"
 CS_DIR = HERE / "cs"
 
 

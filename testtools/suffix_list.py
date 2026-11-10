@@ -15,8 +15,11 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SRC = HERE.parent / "HashChecker" / "Services" / "HashAlgorithms.cs"
-LOC = HERE.parent / "HashChecker" / "Localization.cs"
+# testtools 就在工程根下，产品源码在「工程根\HashChecker_WPF\HashChecker」
+# （解决方案目录外面还套了一层同名目录），原来少算了这一层，默认路径必然找不到文件。
+PRODUCT = HERE.parent / "HashChecker_WPF" / "HashChecker"
+SRC = PRODUCT / "Services" / "HashAlgorithms.cs"
+LOC = PRODUCT / "Localization.cs"
 
 
 def collect_extensions():

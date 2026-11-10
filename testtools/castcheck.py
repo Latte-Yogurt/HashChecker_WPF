@@ -105,7 +105,13 @@ def main():
         if p.suffix != ".cs":
             continue
         text = read(p)
-        stem = p.stem if not p.name.endswith(".cs") else p.name[:-3]
+        # XAML 侧键用的是 p.stem（MainWindow.xaml -> MainWindow），
+        # 所以代码侧必须把 MainWindow.xaml.cs 还原成 MainWindow；
+        # 原来写 p.name[:-3] 得到的是 "MainWindow.xaml"，②③ 两条规则因此永远匹配不上。
+        if p.name.endswith(".xaml.cs"):
+            stem = p.name[:-8]
+        else:
+            stem = p.stem
         lines = text.split("\n")
 
         # ③ 控件名 as 类型

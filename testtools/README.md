@@ -1,8 +1,8 @@
-# HashChecker 测试工具
+﻿# HashChecker 测试工具
 
 只做测试，不改产品代码。
 
-被测程序：`..\HashChecker\bin\<Config>\HashChecker.exe`
+被测程序：`..\HashChecker_WPF\HashChecker\bin\<Config>\HashChecker.exe`
 
 ## 一键跑测试
 
@@ -11,12 +11,27 @@ cd "<HashChecker 项目>\testtools"
 
 python recordcheck.py            # 校验记录解析 / 双向反查 / 算法判定（61 项）
 python localization_check.py     # 三语词典一致性（键集合 / 占位符 / 死引用）
-python cs_check.py ..\HashChecker    # 静态检查：命名类型、文档标签、路径边界、空 catch
-python namecheck.py ..\HashChecker   # 命名风格一致性
-python regioncheck.py ..\HashChecker # region 结构：配对、嵌套 ≤1、跨度 ≤150 行
-python castcheck.py ..\HashChecker   # 强制转换与控件类型：FindName(…) as T 是否恒为 null
-python locargs.py ..\HashChecker     # 本地化：Format 传参个数与 {n} 占位符是否匹配
+python cs_check.py ..\HashChecker_WPF\HashChecker    # 静态检查：命名类型、文档标签、路径边界、空 catch
+python namecheck.py ..\HashChecker_WPF\HashChecker   # 命名风格一致性
+python regioncheck.py ..\HashChecker_WPF\HashChecker # region 结构：配对、嵌套 ≤1、跨度 ≤150 行
+python castcheck.py ..\HashChecker_WPF\HashChecker   # 强制转换与控件类型：FindName(…) as T 是否恒为 null
+python locargs.py ..\HashChecker_WPF\HashChecker     # 本地化：Format 传参个数与 {n} 占位符是否匹配
 ```
+
+C# 探针（`cs\` 下）单独跑：
+
+```powershell
+.\cs\bandclip\bandclip.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\bandclip
+.\cs\bandclip\bandclip.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\bandclip --section v06
+.\cs\bandclip\bandclip.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\bandclip --record <多文件校验记录>
+.\cs\locprobe\locprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe
+.\cs\locprobe\locprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\loc --section v10
+.\cs\colfit\colfit.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\colfit
+```
+
+`bandclip` 需要一个能出现下拉条的列表；纵向滚动条出不来时它按「环境不满足」返回 2，
+不产生假结论。`--record` 可以直接喂一份真实的多文件校验记录（例如 29 项的
+`ASCIIPlayer.7z.sha256`），用真实数据而不是合成文件验证。
 
 `recordcheck.py` 自带编译依赖的探针；其余都支持直接传源码目录。
 
@@ -25,19 +40,19 @@ C# 探针（`cs\` 下）单独跑：
 ```powershell
 python cs\build_all.py                          # 编译全部探针
 python cs\build_all.py saveprobe                # 只编译指定一个
-.\cs\hashprobe\hashprobe.exe ..\HashChecker\bin\Debug\HashChecker.exe
-.\cs\recordprobe\recordprobe.exe ..\HashChecker\bin\Debug\HashChecker.exe %TEMP%\recprobe
-.\cs\suffixprobe\suffixprobe.exe ..\HashChecker\bin\Debug\HashChecker.exe %TEMP%\suffix
-.\cs\saveprobe\saveprobe.exe ..\HashChecker\bin\Debug\HashChecker.exe
-.\cs\addrecordprobe\addrecordprobe.exe ..\HashChecker\bin\Debug\HashChecker.exe %TEMP%\addrec
-.\cs\defaultcheck\defaultcheck.exe ..\HashChecker\bin\Debug\HashChecker.exe %TEMP%\defaults
-.\cs\bandprobe\bandprobe.exe ..\HashChecker\bin\Debug\HashChecker.exe %TEMP%\band
-.\cs\hangprobe\hangprobe.exe ..\HashChecker\bin\Debug\HashChecker.exe %TEMP%\hang
-.\cs\pathprobe\pathprobe.exe ..\HashChecker\bin\Debug\HashChecker.exe %TEMP%\path
-.\cs\settingsprobe\settingsprobe.exe ..\HashChecker\bin\Debug\HashChecker.exe %TEMP%\settings
-.\cs\engineprobe\engineprobe.exe ..\HashChecker\bin\Debug\HashChecker.exe %TEMP%\engine
-.\cs\writeprobe\writeprobe.exe ..\HashChecker\bin\Debug\HashChecker.exe %TEMP%\write
-.\cs\perfprobe\perfprobe.exe ..\HashChecker\bin\Debug\HashChecker.exe %TEMP%\perf --quick
+.\cs\hashprobe\hashprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe
+.\cs\recordprobe\recordprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\recprobe
+.\cs\suffixprobe\suffixprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\suffix
+.\cs\saveprobe\saveprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe
+.\cs\addrecordprobe\addrecordprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\addrec
+.\cs\defaultcheck\defaultcheck.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\defaults
+.\cs\bandprobe\bandprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\band
+.\cs\hangprobe\hangprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\hang
+.\cs\pathprobe\pathprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\path
+.\cs\settingsprobe\settingsprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\settings
+.\cs\engineprobe\engineprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\engine
+.\cs\writeprobe\writeprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\write
+.\cs\perfprobe\perfprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\perf --quick
 ```
 
 退出码一律：0 = 全过，1 = 有失败项，2 = 环境不满足（比如被测程序不存在）。
@@ -66,6 +81,9 @@ testtools/
     ├── addrecordprobe/      连续载入两份记录：算法是否更新、是否触发重算
     ├── defaultcheck/        WriteBom 默认值 / BOM 读写 / 拖入文件跟随下拉框算法
     ├── bandprobe/           框选：多选模式、矩形选行、覆盖层不拦事件
+    ├── bandclip/            框选与下拉条边界：覆盖层/内容区不含下拉条、按下判定、选择增量更新
+    ├── colfit/              列宽自适应：右键菜单项、随窗口比例分配、最大化/恢复重排、过窄时放弃
+    ├── locprobe/            本地化运行时：三语词典完整性、Format 契约、程序集版本
     ├── hangprobe/           界面卡死：自验证 / 计算器读文件是否派发到后台
     ├── pathprobe/           记录内路径边界：`..` 穿越 / UNC / 末分隔符 / 超长 / NUL
     ├── settingsprobe/       设置容错：坏 JSON / 缺键 / 越界值 / 转义往返
@@ -97,7 +115,7 @@ testtools/
 ## 死代码扫描
 
 ```powershell
-python deadcode.py ..\HashChecker
+python deadcode.py ..\HashChecker_WPF\HashChecker
 ```
 
 统计每个成员名在整个源码集里出现的次数，只出现一次就是「只有声明、没人调用」。
@@ -140,17 +158,40 @@ python deadcode.py ..\HashChecker
 * WPF 的 ListView **没有**橡皮筋框选，只有点选 / Ctrl / Shift；
 * 这个列表的行宽铺满整列、行间距只有 1px，如果只允许「从空白处起拖」，
   用户几乎找不到能起拖的地方 —— 等于没有框选。
-  所以改成「任何位置按下先记起点，移动超过 4px 阈值才接管」：
+  所以改成「内容区里按下先记起点，移动超过 4px 阈值才接管」：
   单击与双击完全交给 ListView，只有明显拖动才变框选；
+* **下拉条不在框选区域内**（2026-11-10 修）：框选矩形与覆盖层都按
+  `ContentArea()` 裁剪 —— 列表尺寸减去可见的滚动条尺寸；按下点落在下拉条上时
+  直接放行。否则拖动超过阈值那次 `CaptureMouse` 会把鼠标捕获从滑块上抢走，
+  表现为「只能框选、下拉条拖不动」，而且框选矩形还会盖住下拉条；
 * 覆盖层 `IsHitTestVisible=false`，绝不能吃掉列表的鼠标事件；
-* 选中用「整体替换 SelectedItems」而不是逐项增删 —— 后者每项都触发
-  SelectionChanged，行数一多就卡。
+* 选择按**差集**增量增删，不再清空重建：清空会把已选中的行先退掉再选回来，
+  每移动一次就触发一整轮 SelectionChanged，行数一多就卡。
 
 `cs\bandprobe` 断言：列表是 `SelectionMode.Extended`、`RowsIn` 能按矩形选行、
 覆盖层挂载成功且不拦事件、拖拽阈值存在。
+
+`cs\bandclip` 断言下拉条边界与增量选择：覆盖层宽/高不含下拉条、`ContentArea()`
+宽高与右下角都不越到下拉条上、下拉条上的按下不允许起框选而内容区内的允许、
+同一矩形重复结算不再触发 SelectionChanged。`--section v06` 只跑下拉条边界，
+`--section v09` 只跑横向下拉条。它需要真实布局，所以会**短暂显示**窗口（不做合成输入）。
 > 真实鼠标拖拽已用 Win32 `mouse_event` 注入验证过（6 行列表拖出全部 6 行，
 > 日志显示命中数随矩形增大从 2 → 6 递增）。该脚本依赖真实窗口句柄，
-> 不适合放进无人值守的探针集，故未保留。
+> 不适合放进无人值守的探针集，故未保留；真实拖框与真实点击下拉条仍需人工确认。
+
+## 本地化运行时
+
+`cs\locprobe` 是 `localization_check.py` 与 `locargs.py` 的**运行时**对手段，
+两者互为交叉验证：
+
+* `--section v07`：三语词典展开后键集合是否一致、有没有空文本或裸键名；
+  进程启动时把 UI 语言设成 `fr-FR`（非支持语言），验证回退到 `en-US` 的设计；
+* `--section v08`：`Format` 的运行时契约 —— 占位符真的被替换、少传参数按契约抛
+  `FormatException`、缺失键回退成键名而不是抛异常；
+* `--section v10`：程序集版本不低于 `1.0.1.0`，且文件版本 / 产品版本与程序集版本一致。
+
+静态工具查「三种语言之间是否自洽」，本探针查「运行时展开后是否真的可用」，
+两边都过才算这条维度有覆盖。
 
 
 
@@ -194,13 +235,13 @@ python deadcode.py ..\HashChecker
    **值的长度**为准（长度是硬证据，后缀是人手起的名字，可能写错）。
 
 ```powershell
-.\cs\suffixprobe\suffixprobe.exe ..\HashChecker\bin\Debug\HashChecker.exe %TEMP%\suffix
+.\cs\suffixprobe\suffixprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\suffix
 ```
 
 ## 吞吐基准
 
 ```powershell
-.\cs\perfprobe\perfprobe.exe ..\HashChecker\bin\Debug\HashChecker.exe %TEMP%\perf --quick
+.\cs\perfprobe\perfprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\perf --quick
 ```
 
 用反射直调产品的 `HashingEngine.HashFile`（真实热路径，不是重写一遍算法那种假测试）。
@@ -231,7 +272,7 @@ python deadcode.py ..\HashChecker
 | 自研（位运算） | CRC-32/ISO-HDLC、CRC-64/XZ |
 
 ```powershell
-.\cs\hashprobe\hashprobe.exe ..\HashChecker\bin\Debug\HashChecker.exe --vectors
+.\cs\hashprobe\hashprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe --vectors
 ```
 
 **期望值不是猜的**：`--vectors` 会把算出来的值打印成 TSV，方便与 Python 交叉核对；
@@ -288,7 +329,7 @@ GB18030 / GBK / Big5 / Shift_JIS / EUC-KR > 兜底。BOM、零宽字符、全角
 文件名含 NUL、绝对路径（后者按设计是允许的）。
 
 ```powershell
-.\cs\pathprobe\pathprobe.exe ..\HashChecker\bin\Debug\HashChecker.exe %TEMP%\path
+.\cs\pathprobe\pathprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\path
 ```
 
 **已修（2026-11-05）**：这两条原来都是 FAIL，现在 7 项全绿。
@@ -311,7 +352,7 @@ GB18030 / GBK / Big5 / Shift_JIS / EUC-KR > 兜底。BOM、零宽字符、全角
 `Quote` 的转义必须能往返。
 
 ```powershell
-.\cs\settingsprobe\settingsprobe.exe ..\HashChecker\bin\Debug\HashChecker.exe %TEMP%\settings
+.\cs\settingsprobe\settingsprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\settings
 ```
 
 注意断言口径：`JsonParser.Parse` 对语法错误**按契约抛 `JsonException`**，
@@ -323,7 +364,7 @@ GB18030 / GBK / Big5 / Shift_JIS / EUC-KR > 兜底。BOM、零宽字符、全角
 空任务、纯目录任务、一行多候选算法。
 
 ```powershell
-.\cs\engineprobe\engineprobe.exe ..\HashChecker\bin\Debug\HashChecker.exe %TEMP%\engine
+.\cs\engineprobe\engineprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\engine
 ```
 
 两条容易写错的口径：
@@ -340,7 +381,7 @@ GB18030 / GBK / Big5 / Shift_JIS / EUC-KR > 兜底。BOM、零宽字符、全角
 `*` 开头的文件名、Unicode 文件名、目标目录不存在。
 
 ```powershell
-.\cs\writeprobe\writeprobe.exe ..\HashChecker\bin\Debug\HashChecker.exe %TEMP%\write
+.\cs\writeprobe\writeprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\write
 ```
 
 `ChecksumFile.Write` 的契约是「失败要抛」：占用与无目录都必须抛
@@ -353,8 +394,16 @@ GB18030 / GBK / Big5 / Shift_JIS / EUC-KR > 兜底。BOM、零宽字符、全角
 判定按 WPF 的继承关系：派生类转基类永远安全，其余报出。
 
 ```powershell
-python castcheck.py ..\HashChecker
+python castcheck.py ..\HashChecker_WPF\HashChecker
 ```
+
+> **2026-11-10 修**：后两种形态原来永远报不出来 —— 代码侧把
+> `MainWindow.xaml.cs` 的 stem 算成了 `MainWindow.xaml`，而 XAML 侧登记的是
+> `MainWindow`，控件类型查表必然落空。改成 `p.name[:-8]` 后两条规则才真正生效
+> （已用注入用例验证：`(TextBox)FindName("AlgorithmPicker")` 现在会报出，
+> 且对当前产品源码仍为 0 误报）。
+> 第三种形态 `控件名 as 类型` 仍难有宿主：两端既非派生关系又要在编译期通过时，
+> C# 会直接给 `CS0039`，所以它只对「一端是接口」这类写法有意义，本工程没有。
 
 它**仍然看不到**的一类：`变量 as 类型`（两端都不是控件名，纯 C# 类型转换），
 比如把 `candidate as HashAlgorithmInfo` 改成 `candidate as string as HashAlgorithmInfo`。
@@ -369,7 +418,7 @@ python castcheck.py ..\HashChecker
 `FormatException`。本工具把 26 处 `Format` 调用的实参个数与词典里的 `{n}` 逐个对。
 
 ```powershell
-python locargs.py ..\HashChecker
+python locargs.py ..\HashChecker_WPF\HashChecker
 ```
 
 ## 编译 C# 探针
@@ -409,7 +458,7 @@ python cs\build_all.py --clean      # 先删旧的再编译
 ### 命名风格检查
 
 ```powershell
-python namecheck.py ..\HashChecker
+python namecheck.py ..\HashChecker_WPF\HashChecker
 ```
 
 | 成员 | 风格 |
@@ -427,7 +476,7 @@ python namecheck.py ..\HashChecker
 ### region 结构
 
 ```powershell
-python regioncheck.py ..\HashChecker
+python regioncheck.py ..\HashChecker_WPF\HashChecker
 ```
 
 三条规则：每个 `#region` 有对应 `#endregion`；不得嵌套超过一层；
@@ -458,7 +507,7 @@ python localization_check.py
 ### 格式参数匹配
 
 ```powershell
-python locargs.py ..\HashChecker
+python locargs.py ..\HashChecker_WPF\HashChecker
 ```
 
 读三语词典里每个键的 `{n}` 个数，再数代码里每处 `Format("Key", …)` 的顶层实参个数
