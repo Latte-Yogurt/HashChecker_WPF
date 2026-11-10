@@ -143,10 +143,19 @@ picking overrides the record, and the row is recomputed.
 Filter buttons across the top narrow the list: All, Unavailable, Unknown,
 Loaded, New, Failed, Passed.
 
-Drag a rectangle anywhere on the list to select several rows at once; hold
-`Ctrl` to add to the existing selection. Double-clicking a row that has a value
+Drag a rectangle in the list's content area to select several rows at once; hold
+`Ctrl` to add to the existing selection. The scrollbar strip is deliberately left
+out of the selection region, so the scrollbar keeps working normally during and
+after a drag. Double-clicking a row that has a value
 opens the compare dialog; a row without a value is located in Explorer instead.
 `Enter` hashes; `Esc` stops.
+
+Column widths auto-fit the list width: they are assigned on startup, whenever the
+window is resized, and again after maximize/restore. The four text columns share
+the leftover space proportionally while Size, Modified and Algorithm stay fixed,
+so the two hash columns never get squeezed out and no horizontal scrollbar
+appears for that reason alone. If you drag a column border by hand and want the
+computed widths back, use **Auto-fit Column Widths** in the list's context menu.
 
 #### Saving records
 
@@ -374,7 +383,9 @@ msbuild HashChecker.sln /t:Rebuild /p:Configuration=Release
 
 顶部的筛选按钮收窄列表：全部、不可用、未知、载入、新增、失败、通过。
 
-在列表上任意位置拖出一个矩形，就能一次选中多行；按住 `Ctrl` 则是追加到现有选择。双击有值的一行打开比较窗口，没值的一行则定位到资源管理器。`Enter` 开始计算；`Esc` 停止。
+在列表内容区拖出一个矩形，就能一次选中多行；按住 `Ctrl` 则是追加到现有选择。下拉条那一条**不在**框选区域内，所以框选期间与框选之后下拉条都照常能拖。双击有值的一行打开比较窗口，没值的一行则定位到资源管理器。`Enter` 开始计算；`Esc` 停止。
+
+列宽会自动分配：启动时排一次，窗口大小变化时排一次，最大化与还原后再排一次。四个文本列按比例分掉剩余宽度，大小、修改日期、算法三列固定不变，所以两个哈希列不会被挤没，也不会因此冒出横向滚动条。如果你手动拖过列边框、想把算出来的宽度要回来，用列表右键菜单里的**自动分配列宽**。
 
 #### 保存记录
 
