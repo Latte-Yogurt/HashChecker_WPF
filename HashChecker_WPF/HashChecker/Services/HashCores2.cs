@@ -333,12 +333,6 @@ namespace HashChecker.Services
         {
             return (value << 62) | (value >> 2);
         }
-
-        private static ulong Rotate(ulong value, int bits)
-        {
-            if (bits == 0) return value;
-            return (value << bits) | (value >> (64 - bits));
-        }
     }
 
     /// <summary>SHA3-224（28 字节输出，速率 144）。</summary>

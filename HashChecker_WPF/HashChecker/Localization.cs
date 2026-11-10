@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Globalization;
 
 namespace HashChecker
@@ -24,6 +24,8 @@ namespace HashChecker
                     { "MenuView",              "查看" },
                     { "MenuTools",             "工具" },
                     { "MenuHelp",              "帮助" },
+                    { "MenuRefitColumns",       "重新分配列宽" },
+                    { "MenuAutoFitToggle",      "自动分配列宽" },
 
                     { "FileSave",              "保存" },
                     { "FileSaveItem",          "保存单项" },
@@ -115,6 +117,9 @@ namespace HashChecker
                     { "MsgNoSelection",        "请至少选择一项。" },
                     { "MsgClearConfirm",       "确定要清空整个列表（{0} 项）吗？" },
                     { "MsgCopied",             "已复制到剪贴板。" },
+                    { "MsgColumnsFitted",       "已自动分配列宽。" },
+                    { "MsgAutoFitOn",            "已启用自动分配列宽。" },
+                    { "MsgAutoFitOff",           "已停用自动分配列宽，列宽维持现状。" },
                     { "MsgCopyEmpty",          "没有可复制的内容。" },
                     { "MsgNoHash",             "选中项还没有摘要值，请先执行「开始」。" },
                     { "MsgOverwrite",          "文件已存在：\n{0}\n\n是否覆盖？" },
@@ -187,6 +192,8 @@ namespace HashChecker
                     { "MenuView",              "檢視" },
                     { "MenuTools",             "工具" },
                     { "MenuHelp",              "說明" },
+                    { "MenuRefitColumns",       "重新調整欄寬" },
+                    { "MenuAutoFitToggle",      "自動調整欄寬" },
 
                     { "FileSave",              "儲存" },
                     { "FileSaveItem",          "儲存單項" },
@@ -277,6 +284,9 @@ namespace HashChecker
                     { "MsgNoSelection",        "請至少選取一項。" },
                     { "MsgClearConfirm",       "確定要清空整個清單（{0} 項）嗎？" },
                     { "MsgCopied",             "已複製到剪貼簿。" },
+                    { "MsgColumnsFitted",       "已自動調整欄寬。" },
+                    { "MsgAutoFitOn",            "已啟用自動調整欄寬。" },
+                    { "MsgAutoFitOff",           "已停用自動調整欄寬，欄寬維持現狀。" },
                     { "MsgCopyEmpty",          "沒有可複製的內容。" },
                     { "MsgNoHash",             "選取項還沒有 摘要值，請先執行「開始」。" },
                     { "MsgOverwrite",          "檔案已存在：\n{0}\n\n是否覆蓋？" },
@@ -350,6 +360,8 @@ namespace HashChecker
                     { "MenuView",              "View" },
                     { "MenuTools",             "Tools" },
                     { "MenuHelp",              "Help" },
+                    { "MenuRefitColumns",       "Re-fit Column Widths" },
+                    { "MenuAutoFitToggle",      "Auto-fit Column Widths" },
 
                     { "FileSave",              "Save" },
                     { "FileSaveItem",          "Save Item" },
@@ -440,6 +452,9 @@ namespace HashChecker
                     { "MsgNoSelection",        "Please select at least one item." },
                     { "MsgClearConfirm",       "Clear the whole list ({0} item(s))?" },
                     { "MsgCopied",             "Copied to clipboard." },
+                    { "MsgColumnsFitted",       "Column widths auto-fitted." },
+                    { "MsgAutoFitOn",            "Auto-fit column widths enabled." },
+                    { "MsgAutoFitOff",           "Auto-fit column widths disabled. Column widths are kept as they are." },
                     { "MsgCopyEmpty",          "Nothing to copy." },
                     { "MsgNoHash",             "The selected item has no 摘要 value yet. Run \"Start\" first." },
                     { "MsgOverwrite",          "The file already exists:\n{0}\n\nOverwrite it?" },

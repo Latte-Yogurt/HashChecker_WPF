@@ -19,6 +19,7 @@
         Drop="Window_Drop"
         Closing="Window_Closing"
         Loaded="Window_Loaded"
+        StateChanged="Window_StateChanged"
         SizeChanged="Window_SizeChanged">
 
     <Window.Resources>
@@ -355,16 +356,19 @@
                   KeyDown="ItemList_KeyDown">
             <ListView.ContextMenu>
                 <ContextMenu x:Name="ListMenu">
-                    <MenuItem Header="开始" Click="Start_Click" />
-                    <MenuItem Header="比较哈希值" Click="Compare_Click" />
+                    <MenuItem x:Name="ListMenuStart" Click="Start_Click" />
+                    <MenuItem x:Name="ListMenuCompare" Click="Compare_Click" />
                     <Separator />
-                    <MenuItem Header="复制哈希值" Click="Copy_Click" />
-                    <MenuItem Header="复制路径" Click="CopyPath_Click" />
+                    <MenuItem x:Name="ListMenuCopy" Click="Copy_Click" />
+                    <MenuItem x:Name="ListMenuCopyPath" Click="CopyPath_Click" />
                     <Separator />
-                    <MenuItem Header="定位" Click="Locate_Click" />
-                    <MenuItem Header="属性" Click="Properties_Click" />
+                    <MenuItem x:Name="ListMenuLocate" Click="Locate_Click" />
+                    <MenuItem x:Name="ListMenuProperties" Click="Properties_Click" />
                     <Separator />
-                    <MenuItem Header="移除" Click="Remove_Click" />
+                    <MenuItem x:Name="ListMenuRemove" Click="Remove_Click" />
+                    <Separator />
+                    <MenuItem x:Name="ListMenuRefit" Click="RefitColumns_Click" />
+                    <MenuItem x:Name="ListMenuAutoFit" IsCheckable="True" Click="AutoFitToggle_Click" />
                 </ContextMenu>
             </ListView.ContextMenu>
 

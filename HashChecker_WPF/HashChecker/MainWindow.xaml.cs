@@ -13,6 +13,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using HashChecker.Models;
 using HashChecker.Services;
@@ -138,18 +139,39 @@ namespace HashChecker
         {
             RestoreWindowPlacement();
             UpdateEmptyState();
-            FitColumnsToWidth();
+            AutoFitColumnsIfEnabled();
         }
 
+        /// <summary>
+        /// 窗口尺寸变化时重排列宽。拖动边框会连续触发这里，但重排只是给 7 个列宽赋值，
+        /// 开销可以忽略；真正需要防的是「最大化后视口还没算完就去量」，那由 StateChanged
+        /// 里的 Dispatcher 延迟兜住。
+        /// </summary>
         private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
         {
-            FitColumnsToWidth();
+            AutoFitColumnsIfEnabled();
         }
 
-        /// <summary>列宽之和必须落在视口宽度内，否则会出现横向滚动条，把大小与日期列挤出可视区。</summary>
-        private void FitColumnsToWidth()
+        /// <summary>
+        /// 最大化 / 还原 / 最小化都会走这里。最小化不用重排；
+        /// 最大化与还原时布局尚未完成，直接量会拿到旧视口宽度，所以推到 Dispatcher 里再排。
+        /// </summary>
+        private void Window_StateChanged(object sender, EventArgs e)
+        {
+            if (WindowState == WindowState.Minimized) return;
+
+            Dispatcher.BeginInvoke(new Action(AutoFitColumnsIfEnabled), DispatcherPriority.Loaded);
+        }
+
+        /// <summary>
+        /// 按可用宽度分配列宽：比例来自各列内容的相对长度（哈希值最长、名称次之），
+        /// 固定列（大小 / 修改日期 / 算法）取能放下 "1.23 GB"、"2026-11-10 12:00" 的宽度。
+        /// 视口太窄时直接放弃，让横向滚动条接管，避免把列压成没法读的一条缝。
+        /// </summary>
+        private void AutoFitColumns()
         {
             if (ColName == null || ItemList == null) return;
+            if (WindowState == WindowState.Minimized) return;
 
             double available = ViewportWidth();
             if (available <= 0) return;
@@ -173,6 +195,47 @@ namespace HashChecker
             double used = ColName.Width + ColFolder.Width + ColAlgorithm.Width
                 + ColCurrent.Width + ColSaved.Width + sizeWidth;
             ColModified.Width = Math.Max(modifiedWidth, available - used);
+        }
+
+        /// <summary>
+        /// 只有开关打开时才走的自动时机（启动 / 改窗口大小 / 最大化 / 还原）。
+        /// 关掉后这些时机一律跳过，手动拖好的列宽才不会被下一次窗口变化冲掉。
+        /// </summary>
+        private void AutoFitColumnsIfEnabled()
+        {
+            if (!Settings.AutoFitColumns) return;
+
+            AutoFitColumns();
+        }
+
+        /// <summary>右键菜单「重新分配列宽」：无论开关状态都强制排一次，并回报一句回执。</summary>
+        private void RefitColumns_Click(object sender, RoutedEventArgs e)
+        {
+            AutoFitColumns();
+            StatusRight.Text = Localization.Get("MsgColumnsFitted");
+        }
+
+        /// <summary>
+        /// 右键菜单「自动分配列宽」开关：勾选状态记进设置，下次启动沿用。
+        /// 打开时立刻排一次，用户能马上看到效果；关闭时只停止后续的自动时机，当前列宽保持不动。
+        /// </summary>
+        private void AutoFitToggle_Click(object sender, RoutedEventArgs e)
+        {
+            MenuItem item = sender as MenuItem;
+            if (item == null) return;
+
+            bool enabled = item.IsChecked;
+            Settings.AutoFitColumns = enabled;
+
+            if (enabled)
+            {
+                AutoFitColumns();
+                StatusRight.Text = Localization.Get("MsgAutoFitOn");
+            }
+            else
+            {
+                StatusRight.Text = Localization.Get("MsgAutoFitOff");
+            }
         }
 
         /// <summary>取 ScrollViewer 的视口宽度而不是 ListView 的 ActualWidth：后者含滚动条宽度。</summary>
@@ -320,6 +383,20 @@ namespace HashChecker
             ColSaved.Header = Localization.Get("ColSaved");
             ColSize.Header = Localization.Get("ColSize");
             ColModified.Header = Localization.Get("ColModified");
+
+            // 列表右键菜单原先写死中文，三语界面上会冒出中文；这里统一走词典。
+            ListMenuStart.Header = Localization.Get("EditStart");
+            ListMenuCompare.Header = Localization.Get("EditCompare");
+            ListMenuCopy.Header = Localization.Get("EditCopy");
+            ListMenuCopyPath.Header = Localization.Get("EditCopyPath");
+            ListMenuLocate.Header = Localization.Get("ViewLocate");
+            ListMenuProperties.Header = Localization.Get("ViewProperties");
+            ListMenuRemove.Header = Localization.Get("EditRemove");
+            ListMenuRefit.Header = Localization.Get("MenuRefitColumns");
+            ListMenuAutoFit.Header = Localization.Get("MenuAutoFitToggle");
+
+            // 勾选状态必须与设置保持一致：它决定启动 / 改尺寸 / 最大化时要不要重排列宽。
+            ListMenuAutoFit.IsChecked = Settings.AutoFitColumns;
 
             EmptyHint.Text = Localization.Get("MsgDropHint");
             StatusRight.Text = Localization.Get("StReady");

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
@@ -31,6 +32,7 @@ namespace HashChecker
         private readonly Rectangle _band;
 
         private Point _origin;
+        private bool _armed;
         private bool _dragging;
         private bool _append;
         private bool _captured;
@@ -90,17 +92,28 @@ namespace HashChecker
         }
 
         /// <summary>
-        /// 任何位置按下都先记下起点，但不立刻接管：单击交给 ListView 的点选与双击，
+        /// 只在**文件显示区**（内容区）按下才记起点：单击交给 ListView 的点选与双击，
         /// 小幅移动仍由 ListView 自己按拖动选择处理，只有大幅拖动才变成框选。
         /// 代价是从行上起拖时 ListView 可能先做一点默认拖选，但松手后仍以框选结果为准。
+        ///
+        /// 落在下拉条上的按下必须整条链路放行：这里不记起点、并把 _armed 置 false，
+        /// 后面的 OnMouseMove 才不会被**上一次框选留下的陈旧 _origin** 骗过去 ——
+        /// 否则拖动超过阈值时那次 CaptureMouse 会把鼠标捕获从滑块上抢走，
+        /// 下拉条就再也拖不动了（这正是「只能框选、拖不动下拉条」的成因）。
         /// </summary>
         private void OnMouseDown(object sender, MouseButtonEventArgs e)
         {
             if (e.ClickCount > 1) return;
 
-            _origin = e.GetPosition(_list);
             _dragging = false;
             _captured = false;
+            _armed = false;
+
+            Point origin = e.GetPosition(_list);
+            if (!IsBandStartAllowed(origin)) return;
+
+            _armed = true;
+            _origin = origin;
             _append = (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control;
 
             _baseline.Clear();
@@ -123,7 +136,10 @@ namespace HashChecker
                 return;
             }
 
-            Point current = e.GetPosition(_list);
+            // 按下点不在内容区（例如在下拉条上）：完全不接管，让滑块继续持有捕获。
+            if (!_armed) return;
+
+            Point current = ClampToContent(e.GetPosition(_list));
 
             if (!_dragging)
             {
@@ -148,6 +164,9 @@ namespace HashChecker
             Rect rect = Band(_origin, current);
             PositionBand(rect);
 
+            // 拖动途中窗口可能被缩放、滚动条可能因筛选出现或消失，尺寸必须跟着重算。
+            SyncOverlaySize();
+
             ApplySelection(rect);
 
             e.Handled = true;
@@ -155,6 +174,8 @@ namespace HashChecker
 
         private void OnMouseUp(object sender, MouseButtonEventArgs e)
         {
+            _armed = false;
+
             if (!_dragging) return;
 
             Finish(e.GetPosition(_list));
@@ -180,7 +201,7 @@ namespace HashChecker
 
         private void Finish(Point current)
         {
-            Rect rect = Band(_origin, current);
+            Rect rect = Band(_origin, ClampToContent(current));
             ApplySelection(rect);
 
             _dragging = false;
@@ -193,12 +214,141 @@ namespace HashChecker
             }
         }
 
+        /// <summary>
+        /// 框选可用的内容区 = **文件显示区**：列表里真正放行的那一块，不含任何滚动条。
+        ///
+        /// 口径：从列表整体尺寸里扣掉**实际可见且有尺寸**的滚动条。
+        /// 不能改用 ScrollViewer.ViewportWidth/Height —— 实测它在布局尚未稳定时会给出
+        /// 明显偏小的中间值（本工程实测 ViewportHeight 一度只有 5px，按它裁剪会让整个列表都选不中），
+        /// 也不能只用 SystemParameters 常量 —— WPF 主题会改滚动条宽度（实测 17.33 而非常量 17）。
+        /// </summary>
+        private Rect ContentArea()
+        {
+            double width = _list.ActualWidth;
+            double height = _list.ActualHeight;
+
+            ScrollViewer viewer = FindScrollViewer(_list);
+            if (viewer != null)
+            {
+                double barWidth = TotalBarThickness(viewer, Orientation.Vertical);
+                double barHeight = TotalBarThickness(viewer, Orientation.Horizontal);
+
+                if (barWidth <= 0 || barHeight <= 0)
+                {
+                    // 拿不到实测尺寸时退回系统常量，保证「有滚动条就一定扣掉」。
+                    if (barWidth <= 0 &&
+                        (Visibility)viewer.GetValue(ScrollViewer.ComputedVerticalScrollBarVisibilityProperty) == Visibility.Visible)
+                    {
+                        barWidth = SystemParameters.VerticalScrollBarWidth;
+                    }
+
+                    if (barHeight <= 0 &&
+                        (Visibility)viewer.GetValue(ScrollViewer.ComputedHorizontalScrollBarVisibilityProperty) == Visibility.Visible)
+                    {
+                        barHeight = SystemParameters.HorizontalScrollBarHeight;
+                    }
+                }
+
+                width -= barWidth;
+                height -= barHeight;
+            }
+            else
+            {
+                if ((Visibility)_list.GetValue(ScrollViewer.ComputedVerticalScrollBarVisibilityProperty) == Visibility.Visible)
+                {
+                    width -= SystemParameters.VerticalScrollBarWidth;
+                }
+
+                if ((Visibility)_list.GetValue(ScrollViewer.ComputedHorizontalScrollBarVisibilityProperty) == Visibility.Visible)
+                {
+                    height -= SystemParameters.HorizontalScrollBarHeight;
+                }
+            }
+
+            if (width < 0) width = 0;
+            if (height < 0) height = 0;
+
+            return new Rect(0, 0, width, height);
+        }
+
+        /// <summary>
+        /// 某个方向上所有可见滚动条占用的厚度之和。正常只有一条；
+        /// 累加是为了应对主题把滚动条拆成多个部件的情形，且不会漏掉其中任何一个。
+        /// </summary>
+        private static double TotalBarThickness(DependencyObject root, Orientation orientation)
+        {
+            double total = 0;
+
+            ScrollBar bar = root as ScrollBar;
+            if (bar != null && bar.Orientation == orientation && bar.IsVisible)
+            {
+                double size = orientation == Orientation.Vertical ? bar.ActualWidth : bar.ActualHeight;
+                if (size > 0 && !double.IsNaN(size)) total += size;
+                return total;
+            }
+
+            int count = VisualTreeHelper.GetChildrenCount(root);
+            for (int i = 0; i < count; i++)
+            {
+                total += TotalBarThickness(VisualTreeHelper.GetChild(root, i), orientation);
+            }
+
+            return total;
+        }
+
+        /// <summary>按可视树找列表内部的 ScrollViewer。</summary>
+        private static ScrollViewer FindScrollViewer(DependencyObject root)
+        {
+            if (root == null) return null;
+
+            ScrollViewer direct = root as ScrollViewer;
+            if (direct != null) return direct;
+
+            int count = VisualTreeHelper.GetChildrenCount(root);
+            for (int i = 0; i < count; i++)
+            {
+                ScrollViewer found = FindScrollViewer(VisualTreeHelper.GetChild(root, i));
+                if (found != null) return found;
+            }
+            return null;
+        }
+
+        /// <summary>按下点必须落在内容区里才允许起框选；落在下拉条上时让下拉条自己处理。</summary>
+        private bool IsBandStartAllowed(Point point)
+        {
+            return ContentArea().Contains(point);
+        }
+
+        /// <summary>把拖动点收进内容区，框选矩形就不会越到下拉条上面去。</summary>
+        private Point ClampToContent(Point point)
+        {
+            Rect area = ContentArea();
+
+            if (point.X < area.Left) point.X = area.Left;
+            if (point.X > area.Right) point.X = area.Right;
+            if (point.Y < area.Top) point.Y = area.Top;
+            if (point.Y > area.Bottom) point.Y = area.Bottom;
+
+            return point;
+        }
+
         private void ShowOverlay()
         {
-            _overlay.Width = _list.ActualWidth;
-            _overlay.Height = _list.ActualHeight;
+            SyncOverlaySize();
             _overlay.Visibility = Visibility.Visible;
             _band.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>
+        /// 覆盖层尺寸跟随当前内容区。窗口大小不固定，拖动过程中可能被缩放，
+        /// 也可能因为筛选/滚动让滚动条出现或消失，所以每次移动都要重算一次，
+        /// 不能只在拖动开始时设一次尺寸。
+        /// </summary>
+        private void SyncOverlaySize()
+        {
+            Rect area = ContentArea();
+            _overlay.Width = area.Width;
+            _overlay.Height = area.Height;
         }
 
         private void HideBand()
@@ -227,12 +377,18 @@ namespace HashChecker
 
         /// <summary>
         /// 选中所有与矩形相交的行；_append 为 true 时保留原有选择。
-        /// 用「整体替换 SelectedItems」而不是逐项 Add/Remove：后者每项都会触发 SelectionChanged，
-        /// 行数一多就明显卡顿。
+        /// 只对**差集**做增删：清空重建会把已经选中的行先退掉再选回来，
+        /// 每移动一次就要触发一整轮 SelectionChanged，行数一多就明显卡顿。
+        ///
+        /// 矩形先与内容区求交：万一有调用路径绕过 ClampToContent（或滚动条在拖动途中
+        /// 才出现），落在下拉条上的那部分也不能参与选行 —— 否则「框在下拉条上」照样能选中行。
         /// </summary>
         private void ApplySelection(Rect rect)
         {
-            List<CheckItem> hits = RowsIn(rect);
+            Rect area = ContentArea();
+            rect.Intersect(area);
+
+            List<CheckItem> hits = rect.IsEmpty ? new List<CheckItem>() : RowsIn(rect);
 
             var wanted = new List<CheckItem>(hits.Count + _baseline.Count);
 
@@ -249,10 +405,18 @@ namespace HashChecker
                 if (!wanted.Contains(item)) wanted.Add(item);
             }
 
-            _list.SelectedItems.Clear();
+            var current = new List<object>(_list.SelectedItems.Count);
+            foreach (object selected in _list.SelectedItems) current.Add(selected);
+
+            foreach (object selected in current)
+            {
+                CheckItem item = selected as CheckItem;
+                if (item == null || !wanted.Contains(item)) _list.SelectedItems.Remove(selected);
+            }
+
             foreach (CheckItem item in wanted)
             {
-                _list.SelectedItems.Add(item);
+                if (!_list.SelectedItems.Contains(item)) _list.SelectedItems.Add(item);
             }
         }
 
@@ -276,22 +440,6 @@ namespace HashChecker
             }
 
             return result;
-        }
-
-        private static ScrollViewer FindScrollViewer(DependencyObject root)
-        {
-            if (root == null) return null;
-
-            ScrollViewer direct = root as ScrollViewer;
-            if (direct != null) return direct;
-
-            int count = VisualTreeHelper.GetChildrenCount(root);
-            for (int i = 0; i < count; i++)
-            {
-                ScrollViewer found = FindScrollViewer(VisualTreeHelper.GetChild(root, i));
-                if (found != null) return found;
-            }
-            return null;
         }
     }
 }

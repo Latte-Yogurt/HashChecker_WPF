@@ -25,6 +25,13 @@ namespace HashChecker.Services
         public bool WriteBom { get; set; }
         public bool RememberWindow { get; set; }
 
+        /// <summary>
+        /// 是否让列宽自动分配。开着时启动、改窗口大小、最大化 / 还原都会重排列宽；
+        /// 关掉后停在这些自动时机上，只保留右键菜单里的「重新分配列宽」手动触发，
+        /// 于是手动拖好的列宽不会被下一次窗口变化冲掉。
+        /// </summary>
+        public bool AutoFitColumns { get; set; }
+
         /// <summary>没有校验记录时默认用的算法 id，例如 sha256。</summary>
         public string AlgorithmId { get; set; }
 
@@ -50,6 +57,8 @@ namespace HashChecker.Services
 
             WriteBom = false;
             RememberWindow = true;
+            // 默认开启：列宽之和恒等于视口宽度，首次启动就不会因列宽过大冒出横向滚动条。
+            AutoFitColumns = true;
             AlgorithmId = "sha256";
             WindowLeft = double.NaN;
             WindowTop = double.NaN;
@@ -151,6 +160,7 @@ namespace HashChecker.Services
             AutoLoadCompanion = root.GetBool("AutoLoadCompanion", AutoLoadCompanion);
             WriteBom = root.GetBool("WriteBom", WriteBom);
             RememberWindow = root.GetBool("RememberWindow", RememberWindow);
+            AutoFitColumns = root.GetBool("AutoFitColumns", AutoFitColumns);
 
             string algorithm = root.GetString("Algorithm");
             if (!string.IsNullOrEmpty(algorithm)) AlgorithmId = algorithm;
@@ -184,6 +194,7 @@ namespace HashChecker.Services
                 sb.AppendLine("  \"AutoLoadCompanion\": " + BoolText(AutoLoadCompanion) + ",");
                 sb.AppendLine("  \"WriteBom\": " + BoolText(WriteBom) + ",");
                 sb.AppendLine("  \"RememberWindow\": " + BoolText(RememberWindow) + ",");
+                sb.AppendLine("  \"AutoFitColumns\": " + BoolText(AutoFitColumns) + ",");
                 sb.AppendLine("  \"Algorithm\": " + Quote(AlgorithmId ?? "sha256") + ",");
 
                 if (!double.IsNaN(WindowLeft) && !double.IsNaN(WindowTop))
