@@ -232,9 +232,19 @@ Progress is bytes processed over bytes total. Hashing runs on a background
 thread pool, one file per worker; `Esc`, or **Stop**, cancels the current run
 and leaves completed rows as they are.
 
+**Rows fill in list order, not in completion order.** A worker pool takes tasks
+by index and results are delivered strictly in sequence, so a batch mixing a
+12 MB file with a 128 KB file still fills the list top to bottom. The obvious
+alternative — `Parallel.ForEach` — returns whichever file finished first, which
+makes the list appear to update at random.
+
 The progress callback is throttled to roughly sixteen updates a second, and the
-clock read behind that throttle is `Environment.TickCount`, not
-`DateTime.UtcNow` — at one megabyte per read the throttle is on the hot path.
+clock behind that throttle is a monotonic `Stopwatch` tick count. It used to be
+`Environment.TickCount`, which had a defect: subtracting the initial sentinel
+from a 32-bit `int` overflowed to a negative number, so the "has the interval
+elapsed" test was never true and **nothing was ever reported** — the bar sat at
+0 % and then jumped to 100 %. On a 1.5 GB file that produced two callbacks in
+total (`0`, `100`) instead of the ~194 it emits now.
 
 ### How it works
 
@@ -439,7 +449,9 @@ msbuild HashChecker.sln /t:Rebuild /p:Configuration=Release
 
 进度是「已处理字节 / 总字节」。计算跑在后台线程池上，一个文件一个工作线程；`Esc` 或**停止**会取消当前这一轮，已完成的保持原样。
 
-进度回调节流到大约每秒十六次，节流背后的时钟读的是 `Environment.TickCount` 而不是 `DateTime.UtcNow` —— 每读一块 1MB 就会碰一次这个节流，它在热路径上。
+**结果按列表顺序填，不按算完顺序填。** 工作线程按索引领任务，结果严格按序交付，所以一批「12 MB 与 128 KB 混在一起」的文件仍然从上往下依次填满。最直觉的做法 `Parallel.ForEach` 是谁先算完谁先回调，界面看起来就是结果在列表里乱跳。
+
+进度回调节流到大约每秒十六次，节流背后的时钟是单调的 `Stopwatch` 滴答数。它原来是 `Environment.TickCount`，而那个版本有个缺陷：拿 32 位 `int` 去减初始哨兵值会溢出成负数，于是「间隔到了没有」永远判为否，**进度一次都不上报** —— 进度条整轮停在 0%，然后一下跳到 100%。1.5 GB 的文件因此只触发两次回调（`0`、`100`），而现在是约 194 次。
 
 ### 大概原理
 
