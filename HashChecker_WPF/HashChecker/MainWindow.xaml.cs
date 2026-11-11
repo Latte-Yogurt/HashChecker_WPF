@@ -967,6 +967,10 @@ namespace HashChecker
         /// <summary>
         /// 只算还没有当前值的行，已有值的不重算，避免重复扫描大文件；
         /// 计算本身丢到线程池，进度与结果经 Dispatcher 切回 UI 线程。
+        ///
+        /// 结果与进度都**合并投递**：引擎保证按列表顺序交付，这里攒成一批、
+        /// 每次只投一次 Dispatcher，而不是每行结果、每次进度各投一次。
+        /// 几千个文件时这一条能把跨线程投递从数万次降到数百次。
         /// </summary>
         private async Task BeginHashingAsync()
         {
@@ -995,6 +999,49 @@ namespace HashChecker
 
             CancellationToken token = _hashCts.Token;
 
+            // 待投递的结果缓冲与「已排队」标志：同一时刻最多只有一个 Dispatcher 回调在跑。
+            var pending = new List<HashOutcome>(64);
+            int flushQueued = 0;
+            int lastPercent = -1;
+
+            Action flush = delegate
+            {
+                List<HashOutcome> batch;
+                lock (pending)
+                {
+                    if (pending.Count == 0)
+                    {
+                        Interlocked.Exchange(ref flushQueued, 0);
+                        return;
+                    }
+
+                    batch = new List<HashOutcome>(pending);
+                    pending.Clear();
+                    Interlocked.Exchange(ref flushQueued, 0);
+                }
+
+                foreach (HashOutcome outcome in batch) ApplyOutcome(outcome);
+
+                UpdateCounters();
+                if (_currentFilter != "All") _view.Refresh();
+            };
+
+            Action<int> onProgress = delegate(int percent)
+            {
+                if (percent == lastPercent) return;
+                lastPercent = percent;
+
+                Dispatcher.InvokeAsync(() =>
+                {
+                    // 已经停止了就把这次回调丢掉：否则它会在 ResetProgress 之后
+                    // 把旧的百分比又写回进度条。
+                    if (!_isHashing) return;
+
+                    UpdateProgress(percent);
+                    UpdateCounters();
+                });
+            };
+
             try
             {
                 await Task.Run(() =>
@@ -1002,36 +1049,68 @@ namespace HashChecker
                     _engine.Run(
                         targets,
                         Settings.Threads,
-                        outcome => Dispatcher.InvokeAsync(() => ApplyOutcome(outcome)),
-                        percent => Dispatcher.InvokeAsync(() => UpdateProgress(percent)),
+                        outcome =>
+                        {
+                            lock (pending) pending.Add(outcome);
+
+                            if (Interlocked.CompareExchange(ref flushQueued, 1, 0) == 0)
+                            {
+                                Dispatcher.InvokeAsync(flush, DispatcherPriority.Background);
+                            }
+                        },
+                        onProgress,
                         token);
-                }, token);
+                }, CancellationToken.None);
+
+                // 收尾：引擎已按序交付完，把最后一批刷出去，再统一刷新计数。
+                await Dispatcher.InvokeAsync(flush);
+                UpdateCounters();
+                if (_currentFilter != "All") _view.Refresh();
 
                 StatusRight.Text = Localization.Get("StDone");
             }
             catch (OperationCanceledException)
             {
-                StatusRight.Text = Localization.Get("StStopped");
+                await Dispatcher.InvokeAsync(() => StatusRight.Text = Localization.Get("StStopped"));
             }
             catch (Exception ex)
             {
-                ShowError(Localization.Get("MsgErrorTitle"), ex.Message);
-                StatusRight.Text = Localization.Get("StReady");
+                // 同上：await 的续体可能在线程池上，弹窗与状态文字都必须回 UI 线程再动。
+                string message = ex.Message;
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    ShowError(Localization.Get("MsgErrorTitle"), message);
+                    StatusRight.Text = Localization.Get("StReady");
+                });
             }
             finally
             {
-                _isHashing = false;
-
-                if (_hashCts != null)
+                // 关键：await 之后的续体不保证回到 UI 线程。
+                // `await Task.Run(body, token)` 在 token 已取消时 Task 直接进 Canceled，
+                // 续体会跑在线程池上；此时碰任何 WPF 控件都会抛
+                // "调用线程无法访问此对象，因为另一个线程拥有该对象"。
+                // 所以收尾一律用 Dispatcher 投递，且用 Invoke（同步等待）保证
+                // 调用方拿到这个 Task 时界面已经复位完毕。
+                await Dispatcher.InvokeAsync(() =>
                 {
-                    _hashCts.Dispose();
-                    _hashCts = null;
-                }
+                    _isHashing = false;
 
-                UpdateCommandStates();
-                UpdateCounters();
+                    if (_hashCts != null)
+                    {
+                        _hashCts.Dispose();
+                        _hashCts = null;
+                    }
 
-                if (_currentFilter != "All") _view.Refresh();
+                    // 停止 / 出错后把进度条收回去：留着停止那一刻的百分比，
+                    // 看起来像「还有一半没做完」，与「已停止」的状态文字也自相矛盾。
+                    // 排队中还没执行的进度回调会看到 _isHashing=false 而不再改动进度条。
+                    ResetProgress();
+
+                    UpdateCommandStates();
+                    UpdateCounters();
+
+                    if (_currentFilter != "All") _view.Refresh();
+                });
             }
         }
 
@@ -1050,7 +1129,10 @@ namespace HashChecker
             }
         }
 
-        /// <summary>进度回调是异步投递的，可能晚于「计算完成」，所以只在确实还在算时才改状态文字。</summary>
+        /// <summary>
+        /// 进度回调是异步投递的，可能晚于「计算完成」或「已停止」，所以只在确实还在算时才动界面。
+        /// 停止之后排队进来的迟到回调必须被丢弃，否则会把刚清空的进度条又填回去。
+        /// </summary>
         private void UpdateProgress(int percent)
         {
             if (percent < 0) percent = 0;
@@ -1059,6 +1141,12 @@ namespace HashChecker
             MainProgressBar.Value = percent;
 
             if (_isHashing) StatusRight.Text = Localization.Format("StHashing", percent);
+        }
+
+        /// <summary>把进度条收回起点。停止、出错、以及新一轮开始前都走这里。</summary>
+        private void ResetProgress()
+        {
+            MainProgressBar.Value = 0;
         }
 
         private void Stop_Click(object sender, RoutedEventArgs e)

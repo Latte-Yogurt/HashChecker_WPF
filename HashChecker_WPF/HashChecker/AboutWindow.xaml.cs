@@ -26,7 +26,7 @@ namespace HashChecker
             catch
             {
                 // 取不到程序集版本（极少见）时退回固定串，关于窗口不该因此打不开。
-                version = "1.1.0.0";
+                version = "1.2.0.0";
             }
 
             BodyText.Text = Localization.Format("AboutBody", version);
