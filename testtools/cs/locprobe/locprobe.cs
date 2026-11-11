@@ -183,8 +183,8 @@ class LocProbe
             Console.WriteLine("");
             Console.WriteLine("  --- 程序集版本 ---");
             Version asmVer = asm.GetName().Version;
-            Check("程序集版本不低于 1.1.0.0（本次功能版）",
-                asmVer != null && asmVer >= new Version(1, 1, 0, 0),
+            Check("程序集版本不低于 1.2.0.0（本次性能版）",
+                asmVer != null && asmVer >= new Version(1, 2, 0, 0),
                 "实际 = " + asmVer);
             try
             {

@@ -27,6 +27,7 @@ C# 探针（`cs\` 下）单独跑：
 .\cs\locprobe\locprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe
 .\cs\locprobe\locprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\loc --section v10
 .\cs\colfit\colfit.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\colfit
+.\cs\engineorder\engineorder.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\engineorder
 ```
 
 `bandclip` 需要一个能出现下拉条的列表；纵向滚动条出不来时它按「环境不满足」返回 2，
@@ -83,6 +84,7 @@ testtools/
     ├── bandprobe/           框选：多选模式、矩形选行、覆盖层不拦事件
     ├── bandclip/            框选与下拉条边界：覆盖层/内容区不含下拉条、按下判定、选择增量更新
     ├── colfit/              列宽自适应：右键菜单项、随窗口比例分配、最大化/恢复重排、过窄时放弃
+    ├── engineorder/         计算引擎：交付顺序、进度单调、吞吐下限、多线程结果一致
     ├── locprobe/            本地化运行时：三语词典完整性、Format 契约、程序集版本
     ├── hangprobe/           界面卡死：自验证 / 计算器读文件是否派发到后台
     ├── pathprobe/           记录内路径边界：`..` 穿越 / UNC / 末分隔符 / 超长 / NUL

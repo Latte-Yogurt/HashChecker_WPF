@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -153,6 +153,7 @@ class PerfProbe
 
     /// <summary>缓存的 HashFile 方法：每文件调一次，逐次反射查找会把固定开销放大成主项。</summary>
     static MethodInfo _hashFile;
+    static int _hashFileArgc;
 
     /// <summary>缓存的「算法列表」构造器与实例：同一算法复用同一个列表。</summary>
     static object _cachedList;
@@ -178,6 +179,10 @@ class PerfProbe
                 Console.WriteLine("  !! 找不到 HashFile");
                 return;
             }
+
+            // HashFile 后来加了 knownSize 参数（用于校正实际读到的字节数）。
+            // 按参数个数判断该传几个，探针才不会因为签名变化而崩。
+            _hashFileArgc = _hashFile.GetParameters().Length;
         }
 
         if (_cachedList == null || !_cachedAlgorithm.Equals(algorithm))
@@ -191,7 +196,10 @@ class PerfProbe
 
         try
         {
-            _hashFile.Invoke(engine, new object[] { path, _cachedList, CancellationToken.None });
+            object[] argv = _hashFileArgc >= 4
+                ? new object[] { path, _cachedList, (long)0, CancellationToken.None }
+                : new object[] { path, _cachedList, CancellationToken.None };
+            _hashFile.Invoke(engine, argv);
         }
         catch (TargetInvocationException e)
         {
