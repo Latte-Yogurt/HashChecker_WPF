@@ -294,6 +294,233 @@ def check_path_guard(sources, findings):
                     })
 
 
+# ------------------------------------------------ ⑤-b 路径拼接越界（新增）
+# 为什么需要这一条
+# ----------------
+# 原来的 ⑤ 只认「递归删除」。这个项目真正容易出事的地方不是删除，而是
+# **把校验记录里写的文件名拼进目录**：
+#
+#     string combined = Path.GetFullPath(Path.Combine(root, recorded));
+#     if (!combined.StartsWith(rootWithSeparator, ...)) return null;
+#
+# 删掉后面那行 StartsWith，一份写着 `../../secret.txt` 的记录就能让程序
+# 去读记录目录之外的文件。旧规则对这种缺陷**一条都不报**——实测把那两行
+# 删掉后，它仍打印 `TOTAL PROBLEMS: 0`。这是能力边界，不是执行错误。
+#
+# 判定口径（两条，任一命中即报）
+# ------------------------------
+# ① 「归一化 + 拼接」特征：出现 Path.GetFullPath(Path.Combine(...))。
+#    这个写法本身说明作者**打算**做越界判定，所以方法体内必须真有判定；
+#    没有就是判定被删了。
+# ② 「参数直接拼接」特征：Path.Combine 的第二实参就是所在方法的一个形参
+#    （外部输入直接进来），且方法体内没有越界判定。
+#
+# 为什么这两条能避开误报
+# ----------------------
+# 代码里另有三处 Path.Combine，第二实参都是**已经净化成单个名字段**的量：
+#   MainWindow.xaml.cs:1310  stem + wanted      —— stem 由文件名 Substring 而来
+#   MainWindow.xaml.cs:1417  folderName + ext   —— folderName 来自 Path.GetFileName
+#   ChecksumResolver.cs:476  baseOnly           —— 来自 ChecksumFile.SafeFileName
+# 它们既没有 GetFullPath 包裹，第二实参也不是裸形参，两条都不命中。
+#
+# 已知边界（如实声明）
+# --------------------
+# 若有人把 GetFullPath 与 StartsWith **两行一起**删掉，① 不再成立、② 也不成立，
+# 本规则会漏报。那种改动由运行时 pathprobe 的 `..` 穿越用例兜底
+# （本次变异实测：pathprobe 能捕获）。
+#
+# 一律先剥注释与字符串再判断：否则注释里那句「这里用 StartsWith 做边界校验」
+# 会让规则误判成通过 —— heuristic_probe 的 path 段就栽在这上面。
+
+COMBINE_RE = re.compile(r"\bPath\.Combine\s*\(")
+
+# 越界判定的两种写法：前缀比较，或长度比较
+CONTAIN_RE = re.compile(
+    r"(?:\.StartsWith\s*\(|"
+    r"\.Length\s*<=\s*\w+\.Length|"
+    r"\w+\.Length\s*>\s*\w+\.Length)")
+
+# 方法体定位：方法签名 + {，用于取形参表与体范围
+METHOD_HEAD_RE = re.compile(
+    r"(?:^|\n)[ \t]*(?:(?:public|private|protected|internal|static|sealed|override|virtual|"
+    r"async|new|partial|extern|unsafe|abstract)[ \t]+)+"
+    r"[A-Za-z_][\w<>\[\],\.\? \t]*?[ \t]+(?P<name>[A-Za-z_]\w*)[ \t]*\((?P<params>[^;{}]*)\)"
+    r"[ \t\r\n]*(?:\{|=>)")
+
+
+def _strip_noise(text):
+    """剥掉注释与字符串字面量，只留会真正执行的代码骨架。
+
+    这一步不能省：产品的注释里大量出现 `StartsWith`、`GetFullPath` 这些词
+    （它们恰好在解释「为什么要这么做」），不剥离就会把注释当实现。
+    """
+    out = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == "/" and i + 1 < n and text[i + 1] == "/":
+            while i < n and text[i] != "\n":
+                out.append(" ")
+                i += 1
+            continue
+        if c == "/" and i + 1 < n and text[i + 1] == "*":
+            out.append("  ")
+            i += 2
+            while i + 1 < n and not (text[i] == "*" and text[i + 1] == "/"):
+                out.append("\n" if text[i] == "\n" else " ")
+                i += 1
+            if i + 1 < n:
+                out.append("  ")
+                i += 2
+            continue
+        if c == "@" and i + 1 < n and text[i + 1] == '"':
+            out.append("  ")
+            i += 2
+            while i < n:
+                if text[i] == '"':
+                    if i + 1 < n and text[i + 1] == '"':
+                        out.append("  ")
+                        i += 2
+                        continue
+                    out.append(" ")
+                    i += 1
+                    break
+                out.append("\n" if text[i] == "\n" else " ")
+                i += 1
+            continue
+        if c in '"\'':
+            q = c
+            out.append(" ")
+            i += 1
+            while i < n:
+                if text[i] == "\\":
+                    out.append("  ")
+                    i += 2
+                    continue
+                if text[i] == q:
+                    out.append(" ")
+                    i += 1
+                    break
+                out.append("\n" if text[i] == "\n" else " ")
+                i += 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def _brace_span(text, open_idx):
+    """从 { 出发做配对，返回闭合 } 的下标；配不上返回 -1。"""
+    depth = 0
+    i = open_idx
+    while i < len(text):
+        c = text[i]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return -1
+
+
+def _split_args(text, open_paren):
+    """从 ( 出发切出顶层实参列表；返回 (args, 右括号下标)。"""
+    depth = 0
+    i = open_paren
+    args = []
+    cur = []
+    while i < len(text):
+        c = text[i]
+        if c in "([{":
+            depth += 1
+            if depth == 1:
+                i += 1
+                continue
+        elif c in ")]}":
+            depth -= 1
+            if depth == 0:
+                args.append("".join(cur).strip())
+                return args, i
+        if depth == 1 and c == ",":
+            args.append("".join(cur).strip())
+            cur = []
+        elif depth >= 1:
+            cur.append(c)
+        i += 1
+    return args, -1
+
+
+def _method_of(code, pos):
+    """返回 pos 所在方法的 (名字, 形参名集合, 方法体起, 方法体止)；找不到返回 None。"""
+    head = None
+    for hm in METHOD_HEAD_RE.finditer(code, 0, pos):
+        head = hm
+    if head is None:
+        return None
+    params = set()
+    for raw in (head.group("params") or "").split(","):
+        raw = raw.strip()
+        if not raw:
+            continue
+        raw = re.sub(r"^(?:ref|out|in|params)\s+", "", raw)
+        parts = raw.split("=")[0].split()
+        if len(parts) >= 2:
+            params.add(parts[-1])
+    body_start = code.find("{", head.end() - 1)
+    body_end = _brace_span(code, body_start) if body_start >= 0 else -1
+    return head.group("name"), params, body_start, body_end
+
+
+def check_combine_guard(sources, findings):
+    """⑤-b 把外部输入拼进目录时，必须做越界判定。"""
+    for p in sources:
+        if p.suffix != ".cs":
+            continue
+        raw = read(p)
+        code = _strip_noise(raw)
+
+        for m in COMBINE_RE.finditer(code):
+            args, close = _split_args(code, m.end() - 1)
+            if len(args) < 2:
+                continue
+            second = args[1]
+
+            info = _method_of(code, m.start())
+            if info is None:
+                continue
+            mname, params, body_start, body_end = info
+            if body_end < 0:
+                continue
+
+            body = code[body_start:body_end]
+            has_contain = CONTAIN_RE.search(body) is not None
+
+            # ① 归一化 + 拼接 特征
+            norm_then_combine = re.match(r"\s*Path\.GetFullPath\s*$", code[:m.start()][-40:]) is not None
+            # ② 第二实参是裸形参
+            bare_param = second in params
+
+            if not (norm_then_combine or bare_param):
+                continue
+            if has_contain:
+                continue
+
+            why = []
+            if norm_then_combine:
+                why.append("Path.GetFullPath(Path.Combine(…)) 之后")
+            if bare_param:
+                why.append("把形参 %s 直接拼进目录" % second)
+            findings.append({
+                "class": "⑤ 路径缺边界检查",
+                "file": p.name,
+                "line": code.count("\n", 0, m.start()) + 1,
+                "detail": "%s，缺少「结果仍在目录内」的判定（StartsWith / 长度比较）：%s"
+                          % ("；".join(why), code[m.start():close + 1][:70].replace("\n", " ")),
+            })
+
+
 def main():
     if len(sys.argv) < 2:
         print("用法: python cs_check.py <源码目录> [--json]")
@@ -309,6 +536,7 @@ def main():
     check_dead_branch(sources, findings)
     check_doc_tags(sources, findings)
     check_path_guard(sources, findings)
+    check_combine_guard(sources, findings)
 
     problems = [f for f in findings if not f.get("registered")]
     registered = [f for f in findings if f.get("registered")]

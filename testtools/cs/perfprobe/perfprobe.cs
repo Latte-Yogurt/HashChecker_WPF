@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -19,6 +19,10 @@ class PerfProbe
 {
     static void Main(string[] args)
     {
+        // 必须在触碰产品任何类型之前改道：否则产品会拿「入口程序集名」（本探针）
+        // 当配置目录名，把 settings.json 写进真实的 %LOCALAPPDATA%。
+        RedirectSettingsToTemp();
+
         if (args.Length < 1)
         {
             Console.WriteLine("用法: perfprobe.exe <HashChecker.exe> [工作目录] [--quick]");
@@ -65,6 +69,7 @@ class PerfProbe
         MeasureSingle(engineType, algorithmType, big, "MD5", megabytes);
         MeasureSingle(engineType, algorithmType, big, "SHA3-256", megabytes);
         MeasureSingle(engineType, algorithmType, big, "SHA-512", megabytes);
+        MeasureSingle(engineType, algorithmType, big, "BLAKE3", megabytes);
         MeasureSingle(engineType, algorithmType, big, "CRC-32", megabytes);
 
         // 多小文件：批量任务里最常见的形态，验缓冲复用是否生效
@@ -238,4 +243,24 @@ class PerfProbe
             }
         }
     }
-}
+
+    /// <summary>
+    /// 把配置目录改道到临时目录。必须在触碰产品任何类型之前调用 ——
+    /// 探针用 LoadFrom 载入产品程序集后，产品会拿「入口程序集名」当配置目录名，
+    /// 那个名字就是本探针，配置会落到 %LOCALAPPDATA%\<探针名>\ 里，
+    /// 每跑一次就污染一次真实用户配置。
+    /// </summary>
+    static void RedirectSettingsToTemp()
+    {
+        try
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "HashChecker", "settings-" + Path.GetFileNameWithoutExtension(
+                System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName));
+            Directory.CreateDirectory(dir);
+            Environment.SetEnvironmentVariable("HASHCHECKER_SETTINGS_DIR", dir);
+        }
+        catch
+        {
+            // 改道失败不该让探针跑不起来：最坏退回原位，测试结论不受影响。
+        }
+    }}

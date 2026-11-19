@@ -72,6 +72,7 @@ class PathProbe
 
     static int Main(string[] args)
     {
+        RedirectSettingsToTemp();
         if (args.Length < 1)
         {
             Console.WriteLine("用法: pathprobe.exe <被测 exe 路径> [工作目录]");
@@ -189,5 +190,26 @@ class PathProbe
         }
         Console.WriteLine("失败 " + _failures + " 项");
         return 1;
+    }
+
+    /// <summary>
+    /// 把配置目录改道到临时目录。必须在触碰产品任何类型之前调用 ——
+    /// 探针用 LoadFrom 载入产品程序集后，产品会拿「入口程序集名」当配置目录名，
+    /// 那个名字就是本探针，配置会落到 %LOCALAPPDATA%\<探针名>\ 里，
+    /// 每跑一次就污染一次真实用户配置。
+    /// </summary>
+    static void RedirectSettingsToTemp()
+    {
+        try
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "HashChecker", "settings-" + Path.GetFileNameWithoutExtension(
+                System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName));
+            Directory.CreateDirectory(dir);
+            Environment.SetEnvironmentVariable("HASHCHECKER_SETTINGS_DIR", dir);
+        }
+        catch
+        {
+            // 改道失败不该让探针跑不起来：最坏退回原位，测试结论不受影响。
+        }
     }
 }
