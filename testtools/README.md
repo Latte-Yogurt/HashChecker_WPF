@@ -1,4 +1,4 @@
-﻿# HashChecker 测试工具
+# HashChecker 测试工具
 
 只做测试，不改产品代码。
 
@@ -6,15 +6,32 @@
 
 ## 一键跑测试
 
+**最省事的做法**（推荐）：一条命令跑完全部 40 项，并给出逐项结论表。
+
 ```powershell
 cd "<HashChecker 项目>\testtools"
 
+python run_all_tests.py                 # 全部跑一遍，退出码 0 = 全通过
+python run_all_tests.py --config Release # 跑 Release 构建
+python run_all_tests.py --only hashprobe,uiprobe   # 只跑指定的几项
+python run_all_tests.py --skip perfprobe          # 跳过耗时的
+python run_all_tests.py --verbose        # 连每个工具的原始输出一起打印
+python run_all_tests.py --list           # 只列出会跑哪些项
+```
+
+它自己负责：找 `bin\<config>\HashChecker.exe`、按每个工具真正需要的参数把它调起来、
+把结论翻译成「通过 / 失败 / 跳过」、汇总成一张表。只读产品、只写 `%TEMP%`。
+
+**也可以逐个跑**：
+
+```powershell
 python recordcheck.py            # 校验记录解析 / 双向反查 / 算法判定（61 项）
 python localization_check.py     # 三语词典一致性（键集合 / 占位符 / 死引用）
 python cs_check.py ..\HashChecker_WPF\HashChecker    # 静态检查：命名类型、文档标签、路径边界、空 catch
 python namecheck.py ..\HashChecker_WPF\HashChecker   # 命名风格一致性
 python regioncheck.py ..\HashChecker_WPF\HashChecker # region 结构：配对、嵌套 ≤1、跨度 ≤150 行
 python castcheck.py ..\HashChecker_WPF\HashChecker   # 强制转换与控件类型：FindName(…) as T 是否恒为 null
+python renamecheck.py ..\HashChecker_WPF\HashChecker # 改名残留：旧名无残留、新名定义与引用一致、名字与类型相符
 python locargs.py ..\HashChecker_WPF\HashChecker     # 本地化：Format 传参个数与 {n} 占位符是否匹配
 ```
 
@@ -26,6 +43,7 @@ C# 探针（`cs\` 下）单独跑：
 .\cs\bandclip\bandclip.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\bandclip --record <多文件校验记录>
 .\cs\locprobe\locprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe
 .\cs\locprobe\locprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\loc --section v10
+.\cs\aboutprobe\aboutprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\about
 .\cs\colfit\colfit.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\colfit
 .\cs\engineorder\engineorder.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\engineorder
 ```
@@ -43,6 +61,9 @@ python cs\build_all.py                          # 编译全部探针
 python cs\build_all.py saveprobe                # 只编译指定一个
 .\cs\hashprobe\hashprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe
 .\cs\recordprobe\recordprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\recprobe
+.\cs\blake3probe\blake3probe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\b3
+.\cs\pickerprobe\pickerprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe
+.\cs\guiprobe\guiprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\gui 398d42d5677b8bc40eb177ea45565bea3fc2fec2927c80304424c244435f9a78
 .\cs\suffixprobe\suffixprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\suffix
 .\cs\saveprobe\saveprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe
 .\cs\addrecordprobe\addrecordprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\addrec
@@ -58,14 +79,42 @@ python cs\build_all.py saveprobe                # 只编译指定一个
 
 退出码一律：0 = 全过，1 = 有失败项，2 = 环境不满足（比如被测程序不存在）。
 
+### 探针不会碰你真实的用户配置
+
+`cs\` 下的每个探针在进入 `Main` 之后**第一件事**就是调用 `RedirectSettingsToTemp()`，
+把环境变量 `HASHCHECKER_SETTINGS_DIR` 指向 `%TEMP%\HashChecker\settings-<探针名>`。
+产品侧 `AppSettings.SettingsFolder` 看到这个变量就整段改道，你真正的
+`%LOCALAPPDATA%\HashChecker\settings.json` 因此一次都不会被读改。
+
+为什么需要这一层：探针用 `Assembly.LoadFrom` 载入产品程序集，产品按「入口程序集名」决定配置目录名，
+而那个名字是**探针自己**。没有改道时每跑一个探针就会在 `%LOCALAPPDATA%` 下新建一个以探针命名的目录。
+顺带一句：`Environment.SetEnvironmentVariable("LOCALAPPDATA", …)` 改不动这条路 ——
+`GetFolderPath(SpecialFolder.LocalApplicationData)` 读的是注册表里的已知文件夹，不认这个变量。
+
+> **这里踩过一个坑：`perfprobe` 定义了改道函数却忘了调用。**
+> 它的 `RedirectSettingsToTemp()` 一直存在、也一直写在文件里，只是 `Main` 里没有那一行调用 ——
+> 于是它每跑一次就在 `%LOCALAPPDATA%` 下留一个 `perfprobe\` 目录。
+> 别的探针都调了，唯独它漏了，所以光看「文件里有没有这个函数」是查不出来的，
+> 必须查「有没有真的被调用」。
+>
+> 现在的做法是：`run_all_tests.py` 每次跑完都做一次 `settings-isolation` 检查，
+> 直接看真实 `%LOCALAPPDATA%` 下有没有多出以探针命名的目录 ——
+> 这比逐个核对调用点可靠，因为漏一个就会当场暴露，而不是等到下次有人想起来才发现。
+
 ## 目录结构
 
 ```
 testtools/
 ├── README.md                本文件
+├── run_all_tests.py         一键跑完全部测试并汇总（推荐入口）
+├── test_env.py              设置目录隔离：让探针只写 %TEMP%，不碰用户真实配置
+├── safe_ops.py              安全删除：五条白名单闸门（直接运行 = 自检）
+├── langkeycheck.py          资源键完整性 + 语言纯度（英/繁不得混入别种文字）
+├── heuristic_probe.py       启发式探测：产品承诺 vs 实际行为（探索型）
 ├── cs_check.py              静态检查：命名/类型不一致、文档标签、路径边界、空 catch
 ├── namecheck.py             命名风格一致性：字段/属性/方法/局部变量各自风格
 ├── regioncheck.py           region 结构：配对、嵌套 ≤1、跨度 ≤150 行
+├── renamecheck.py           改名残留：旧名无残留、新名定义与引用一致、名字与类型相符
 ├── localization_check.py    三语词典：键集合、{n} 占位符数量、代码引用的死键
 ├── recordcheck.py           校验记录：宽容解码、行格式、文件名、算法判定（调 recordprobe）
 ├── suffix_list.py           从 HashAlgorithms 导出首选后缀；--check 查过滤器覆盖
@@ -73,19 +122,28 @@ testtools/
 ├── deadcode.py              死代码：全项目只出现一次的成员（反射入口已排除）
 ├── castcheck.py             强制转换与控件类型：FindName(…) as T 是否会恒为 null
 ├── locargs.py               本地化：Format 传参个数与词典 {n} 占位符是否对得上
+├── redirectcheck.py         配置改道：每个探针的 Main 里是否真的调用了改道函数
 └── cs/                      需要进程内跑的 C# 探针（反射直调产品内部类型）
     ├── build_all.py         编译下面所有探针（二进制放在各自目录里）
-    ├── hashprobe/           多算法内核的密码学正确性（15 个算法 × 4 类断言）
+    ├── hashprobe/           多算法内核的密码学正确性（15 个内核 × 5 类断言，含 BLAKE3 树形边界）
+    ├── blake3probe/         BLAKE3 端到端：目录登记 / 记录往返 / 长度冲突 / 双向反查
+    ├── pickerprobe/         算法下拉框：BLAKE3 在列、项数与目录一致、选中后能算对
+    ├── guiprobe/            端到端：真窗口 + 真 .blake3 记录 → 那一行必须判定通过
     ├── recordprobe/         校验记录解析 / 反推 / 算法判定（61 项运行时断言）
     ├── suffixprobe/         算法 ↔ 后缀契约：唯一性 + 保存往返 + 冲突回退
     ├── saveprobe/           保存路径的后缀纠正（双后缀 .sha3-512.sha256 等）
+    ├── saveorder/           记录写出的行序契约：按 Sequence 升序、跳过无值行、只写基名
     ├── addrecordprobe/      连续载入两份记录：算法是否更新、是否触发重算
     ├── defaultcheck/        WriteBom 默认值 / BOM 读写 / 拖入文件跟随下拉框算法
     ├── bandprobe/           框选：多选模式、矩形选行、覆盖层不拦事件
     ├── bandclip/            框选与下拉条边界：覆盖层/内容区不含下拉条、按下判定、选择增量更新
+    ├── bandgesture/         框选手势：几何（运行时）+ IL（静态）双证据
     ├── colfit/              列宽自适应：右键菜单项、随窗口比例分配、最大化/恢复重排、过窄时放弃
+    ├── uiprobe/             界面健康：控件名重复、TabIndex、默认/取消按钮、文本溢出、初始焦点
     ├── engineorder/         计算引擎：交付顺序、进度单调、吞吐下限、多线程结果一致
+    ├── progresslife/        进度条生命周期：停止后必须清回 0，迟到回调必须丢弃
     ├── locprobe/            本地化运行时：三语词典完整性、Format 契约、程序集版本
+    ├── aboutprobe/          关于窗口：版本号自动跟随程序集版本、不得显示宿主进程的 0.0.0.0
     ├── hangprobe/           界面卡死：自验证 / 计算器读文件是否派发到后台
     ├── pathprobe/           记录内路径边界：`..` 穿越 / UNC / 末分隔符 / 超长 / NUL
     ├── settingsprobe/       设置容错：坏 JSON / 缺键 / 越界值 / 转义往返
@@ -190,7 +248,7 @@ python deadcode.py ..\HashChecker_WPF\HashChecker
   进程启动时把 UI 语言设成 `fr-FR`（非支持语言），验证回退到 `en-US` 的设计；
 * `--section v08`：`Format` 的运行时契约 —— 占位符真的被替换、少传参数按契约抛
   `FormatException`、缺失键回退成键名而不是抛异常；
-* `--section v10`：程序集版本不低于 `1.0.1.0`，且文件版本 / 产品版本与程序集版本一致。
+* `--section v10`：程序集版本不低于 `1.3.0.0`，且文件版本 / 产品版本与程序集版本一致。
 
 静态工具查「三种语言之间是否自洽」，本探针查「运行时展开后是否真的可用」，
 两边都过才算这条维度有覆盖。
@@ -249,29 +307,43 @@ python deadcode.py ..\HashChecker_WPF\HashChecker
 用反射直调产品的 `HashingEngine.HashFile`（真实热路径，不是重写一遍算法那种假测试）。
 `--quick` 用 64MB 而不是 256MB，跑得更快。
 
-参考量级（本机，64MB 单文件）：
+参考量级（本机，64MB 单文件，`Release` 构建）：
 
 | 算法 | 吞吐 |
 |---|---|
-| MD5 | ~430 MB/s |
-| CRC-32 | ~170–195 MB/s |
-| SHA-256 / SHA-512 | ~78–130 MB/s（框架实现） |
-| SHA3-256 | ~16 MB/s（纯 C# 位运算，Keccak 本身就很重） |
+| SHA-256 | ~1,460 MB/s（框架实现） |
+| SHA-512 | ~510 MB/s（框架实现） |
+| MD5 | ~500 MB/s（框架实现） |
+| CRC-32 | ~380 MB/s |
+| SHA3-256 | ~215 MB/s（纯 C# 位运算，Keccak 本身就很重） |
+| BLAKE3 | ~95 MB/s（纯 C# 顺序实现，未做 SIMD 并行） |
+
+> BLAKE3 的数字是**单线程、标量、无 SIMD** 的结果。官方实现靠 AVX2/AVX-512 同时算 8/16 个
+> chunk 才能上到 GB/s 量级；这里是逐 chunk 顺序算的，所以与 SHA3-256 同一量级
+> （比它快，因为 BLAKE3 的轮数更少）。要更快就得走 `System.Numerics` 的 SIMD 路径，
+> 而 .NET Framework 4.7.2 上的 `Vector<uint>` 宽度与 JIT 支持都不足以兑现那份收益，
+> 所以这里刻意停在「正确的标量实现」。
 
 
 ## 多算法内核（密码学正确性）
 
-`HashChecker\Services\HashCores.cs` / `HashCores2.cs` / `HashCores3.cs` 实现增量内核 `IHashCore`
+`HashChecker\Services\Cores\` 下的 23 个文件实现增量内核 `IHashCore`
 （`Initialize` / `Append` / `Finish`），全部是 O(1) 内存的流式实现：
 
 | 来源 | 算法 |
 |---|---|
-| .NET 框架（`BuiltInCore` 适配） | MD5、SHA-1、SHA-256、SHA-384、SHA-512 |
+| .NET 框架（`FrameworkCore` 的五个子类） | MD5、SHA-1、SHA-256、SHA-384、SHA-512 |
 | 自研（SHA-2 家族 64 位字） | SHA-512/224、SHA-512/256 |
 | 自研（SHA-2 家族 32 位字） | SHA-224 |
 | 自研（Keccak-f[1600] 海绵） | SHA3-224 / 256 / 384 / 512 |
-| 自研 | BLAKE2s-256、BLAKE2b-256 |
+| 自研 | BLAKE2s-256、BLAKE2b-256、BLAKE2b-512 |
+| 自研（1 KiB chunk 的 Merkle 树） | BLAKE3-256 |
 | 自研（位运算） | CRC-32/ISO-HDLC、CRC-64/XZ |
+
+每个算法一个文件（`HashChecker\Services\Cores\`，共 23 个）。探针按 id 直接映射到类名，
+类名对不上就会报「找不到」—— 所以「一个算法一个服务」这条不变量本身也被探针守着。
+`hashprobe` 的【框架算法适配】段另外断言五个框架子类算出来的值各自等于对应框架 API 的值，
+并且五个类的类型名互不相同。
 
 ```powershell
 .\cs\hashprobe\hashprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe --vectors
@@ -279,15 +351,60 @@ python deadcode.py ..\HashChecker_WPF\HashChecker
 
 **期望值不是猜的**：`--vectors` 会把算出来的值打印成 TSV，方便与 Python 交叉核对；
 `hashprobe.cs` 里回填的期望值全部由 Python `hashlib`
-（`sha512_224` / `sha512_256` / `sha3_*` / `blake2s` / `blake2b`）与独立的 CRC 脚本算出。
+（`sha512_224` / `sha512_256` / `sha3_*` / `blake2s` / `blake2b`）、官方的 `blake3`
+包，与独立的 CRC 脚本算出。
 
-覆盖 4 类断言：
+覆盖 5 类断言：
 
-- **已知向量**：空输入 / `"abc"` / `"123456789"` × 15 个算法；
+- **已知向量**：空输入 / `"abc"` / `"123456789"` × 15 个内核（MD5 与 SHA-1 由「框架算法适配」一段单独覆盖）；
 - **分块流式**：300 KB 数据按 1000 字节分块喂入，结果必须与一次性喂入相同；
 - **实例复用**：同一内核算完一个输入后重置，再算下一个必须仍然正确
   （最容易踩的坑：`TransformFinalBlock` 之后状态已结束）；
+- **BLAKE3 树形边界**：按官方 `test_vectors.json` 的输入（第 i 字节是 `i % 251`），
+  对 0/1/2/3、63/64/65、127/128/129、1023/1024/1025、2048/2049、3072/3073、
+  4096/4097、5120、6144、7168、8192 共 23 个长度逐个比参考值 ——
+  这一组专门咬 chunk 边界与树形，任何「差一个字节」都会露出；
+  另有 9 种长度 × 8 种分块大小的流式一致性；
 - **大输入**：10 MB 数据，验证不抛异常且输出长度正确。
+
+## BLAKE3 端到端
+
+内核算对了不等于用户能用上。`cs\blake3probe` 查的是目录登记与记录链路：
+
+```powershell
+.\cs\blake3probe\blake3probe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\b3
+```
+
+- **目录**：`ById("blake3")` 存在、显示名 `BLAKE3`、首选后缀 `.blake3`、摘要 32 字节；
+  后缀反查回 `blake3`；别名 `blake3` / `BLAKE3` / `Blake-3` / `blake-3` / `b3` 都认得出来；
+- **与 BLAKE2b 不混**：两者的首选后缀必须不同 —— 后缀是读回时唯一的算法线索；
+- **记录往返**：值写成 `.blake3` 再解析回来，算法与值都必须一模一样；
+- **长度冲突**：`.blake3` 里装 MD5 的 32 位值 → 按长度判成 `md5`；
+  **同长度不算冲突**：装 BLAKE2b-256 的值（也是 64 位）仍按后缀认 `blake3`，
+  与 `.sha256` 装 SHA3-256 值的规则一致；
+- **行内算法名**：`BLAKE3 (file) = ...` 认得出来；
+- **双向反查**：`.blake3` 记录 → 找到 `payload.bin`；文件 → 找到那份记录。
+
+`cs\pickerprobe` 守界面侧：算法下拉框里真的出现 `BLAKE3`（第 16 项）、
+项数与算法目录一致、显示名不重复、选中后 `Id` 是 `blake3` 且能算出 `"abc"`
+的正确值。内核与目录都对了但下拉框没列出来，用户一样用不上。
+
+`cs\guiprobe` 是**端到端**的那一条：把一份真实的 `.blake3` 记录交给真实的
+`MainWindow.AddPaths(paths, autoStart: true)`（拖放与命令行最终都走这里），
+跑消息泵等它算完，再断言那一行判定为「通过」：
+
+```powershell
+.\cs\guiprobe\guiprobe.exe ..\HashChecker_WPF\HashChecker\bin\Release\HashChecker.exe %TEMP%\gui 398d42d5677b8bc40eb177ea45565bea3fc2fec2927c80304424c244435f9a78
+```
+
+断言 7 项：记录反推出一行、这一行是 `sample.bin` 而不是记录本身、保存值已填入、
+算出当前值、当前值等于官方参考值、算法列显示 `BLAKE3`、状态为「通过」。
+其余探针都是分别验证某一层，只有这里验证它们拼在一起仍然可用 ——
+任何一层错位，用户看到的就是「校验失败」。
+
+> 第三个参数是**期望值**，故意由调用方传入而不是写死在探针里：
+> 探针自己算一遍再跟自己比就成了自证。这个值是官方 `blake3` 包对
+> 10240 字节 `i & 0xFF` 数据算出来的。
 
 ## 校验记录：解析、反推与宽容解码
 
@@ -389,6 +506,28 @@ GB18030 / GBK / Big5 / Shift_JIS / EUC-KR > 兜底。BOM、零宽字符、全角
 `ChecksumFile.Write` 的契约是「失败要抛」：占用与无目录都必须抛
 `IOException` / `DirectoryNotFoundException`，让调用方弹窗提示，不能静默写半截。
 
+## 记录写出的行序（saveorder）
+
+`cs\saveorder` 查的是**写出顺序**，这一项此前是个空白：`suffixprobe` / `saveprobe` /
+`writeprobe` 关心的全是后缀、BOM、转义，**没有一项检查行的先后顺序**。
+
+`MainWindow.BuildChecksumLines` 用 `items.OrderBy(x => x.Sequence)` 排序后写出，
+而 `Sequence` 是 `CheckItem` 构造时从静态计数器取的号（只读属性）。
+正常界面操作里「加入顺序」恰好等于「Sequence 顺序」，所以把 `OrderBy` 删掉，
+旧测试**一个都不会红**。本探针制造**解耦**：先按 alpha、beta、gamma 的次序构造
+（于是 Sequence 是 3、4、5），再按 **gamma、alpha、beta** 的次序加入列表。
+此时有排序则写出 `alpha, beta, gamma`，无排序则写出 `gamma, alpha, beta` —— 差别可见。
+
+```powershell
+.\cs\saveorder\saveorder.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\saveorder
+```
+
+五段：A 集合顺序与 Sequence 顺序解耦 · B 换一组打乱再验一次 · C 无当前值的行不得写出 ·
+D 空列表不抛异常 · E 只写基名、行格式是「hash + 空格 + `*` + 基名」。
+
+**变异保护**：删掉 `BuildChecksumLines` 的 `.OrderBy(x => x.Sequence)` 后，
+A 段与 B 段各报失败（写出变成 `gamma, alpha, beta`），共 3 条 `!!`、退出码 1。
+
 ## 强制转换与控件类型
 
 `castcheck.py` 补 `cs_check.py` ① 项的三个盲区：
@@ -412,6 +551,167 @@ python castcheck.py ..\HashChecker_WPF\HashChecker
 这种写法由编译器直接拒绝（`CS0039`），所以静态工具缺席不会漏到运行时；
 但如果哪天改成 `as object as X` 这种能过编译的形态，本工具与 `cs_check.py` 都不会报，
 需要靠代码评审。
+
+## 界面健康（uiprobe）
+
+`cs\uiprobe` 遍历每个窗口的可视树，找「看上去有、其实用不了」的控件。
+这类问题编译期不报、现有测试也抓不到：
+
+```
+A. TabIndex 合法（无负值）
+B. 对话框必须有且只有一个默认按钮、至多一个取消按钮，且两者不同源
+C. 可见交互控件的启用情况（只统计，不判失败 —— 空列表时全灰是正确状态机）
+D. 明确约束了宽度的 TextBlock 不得溢出（三语文案长短差异最大的地方）
+E. 产品声明的 x:Name 在同一作用域内不得重复
+F. 有主输入框的对话框，打开后焦点必须已经在输入区
+G. 窗口标题不得为空（任务栏 / 窗口切换器的标识）
+H. 可见按钮必须有内容，不能是一块空白
+I. 显式设置的 TabIndex 不得重复（重复会让 Tab 顺序不确定）
+```
+
+```powershell
+.\cs\uiprobe\uiprobe.exe ..\HashChecker_WPF\HashChecker\bin\Debug\HashChecker.exe %TEMP%\ui
+```
+
+> **它踩过的三个坑，都写进判定里了**：
+> 1. **模板内部元素不算重复**。`MainWindow.xaml` 里 Button 与 ToggleButton 两个
+>    `ControlTemplate` 各有一个 `x:Name="Body"` 的 `Border` —— 各自的模板作用域，
+>    完全合法。第一版按「全窗口比名字」报了一堆假重复，现在按 `TemplateNames()`
+>    把模板内部的声明整体排除。
+> 2. **Auto 列与 StackPanel 里的 TextBlock 谈不上溢出**。它们的宽度由内容撑开，
+>    `DesiredSize` 大于 `ActualWidth` 只是两次布局之间的瞬态。第一版报了
+>    「LblThreads 需要 46px 只有 36px」这种假警，现在只判被明确约束了宽度的。
+> 3. **「全部按钮禁用」不一定是缺陷**。主窗口在列表为空时禁用全部按钮是对的。
+>    该项改为只输出统计值，不参与通过判定。
+>
+> 这三个坑都是**先跑出错报、再逐条查证是探针错而不是产品错**才改掉的 ——
+> 反向验证见下：真正修掉 `CalculatorWindow` 不聚焦输入框这个缺陷后，
+> 该项从 `!!` 变 `OK`；把修复改回去，该项立刻重新报错。
+
+## 改名残留（renamecheck）
+
+改名必须同步改掉全部引用点，否则运行时 `FindName` 拿到 null，或 XAML 绑定静默失效。
+编译期不报、单元测试也不覆盖，所以做成工具。四类检查：
+
+```
+RN1  旧名残留：改名清单里的旧名字，源码里一个都不该剩
+RN2  新名一致：新名字在 XAML 有 x:Name 定义、且在代码里有引用
+RN3  名不副实：名字含类型词（全称或缩写）但元素类型对不上
+RN4  孤儿控件名：x:Name 声明了却没有任何代码/绑定引用（只提示，不判失败）
+```
+
+```powershell
+python renamecheck.py ..\HashChecker_WPF\HashChecker
+```
+
+`RENAMES` 清单当前为空 —— 本项目至今没有发生过控件改名，这是对的；
+但 RN3/RN4 仍然完整生效，能守住新加控件的命名质量。
+
+> **RN3 的缩写必须小心**：只认完整类型词（`TextBlock`）的话，一个叫
+> `BtnFoo` 的 TextBlock 会整条漏过去（已实测确认）。所以缩写一起认。
+> 但缩写会撞车 —— `List` 曾被当成 `ListView` 的缩写，结果 `ListMenu*`
+> 那 10 个「列表右键菜单」项全部误报。现在 `List` 已剔除，`ListView` 只认
+> `Lv` 与全称；`Box`/`Tb`/`Sp` 这类过泛的也一并剔除。
+
+## 设置目录隔离（test_env + settings-isolation）
+
+产品把设置写在 `%LOCALAPPDATA%\HashChecker\settings.json`。探针用
+`Assembly.LoadFrom` 载入产品时，产品按「入口程序集名」决定配置目录名，
+而那个名字是**探针自己** —— 于是每跑一个探针，`%LOCALAPPDATA%` 下就多一个
+`colfit\`、`guiprobe\`、`pickerprobe\`……实测积累过 **9 个**。
+
+现在两侧各有一道改道：
+
+| 侧 | 做法 |
+|---|---|
+| 产品 | `AppSettings.SettingsFolder` 优先读 `HASHCHECKER_SETTINGS_DIR`，非空即整段改道 |
+| 探针 | `Main` 第一句调 `RedirectSettingsToTemp()`，把它指向 `%TEMP%\HashChecker\settings-<探针名>` |
+| Python 套件 | `test_env.isolate_settings_root(套件名)` + 每处 `subprocess` 传 `child_env()` |
+
+**为什么不能改 `LOCALAPPDATA` 环境变量**：`GetFolderPath(SpecialFolder.LocalApplicationData)`
+走 `SHGetFolderPath`，读的是注册表里的已知文件夹，与环境变量无关。已实测确认 ——
+把 `LOCALAPPDATA` 指到别处，`GetFolderPath` 仍返回原路径。所以必须由产品自己开口子。
+
+一键入口里有一项 `settings-isolation` 专门守这件事：它调
+`test_env.leaked_probe_dirs()`，列出 `%LOCALAPPDATA%` 下「只有一个 settings.json」
+的目录（排除产品自己的 `HashChecker`），有就判失败。
+
+> 它的回归保护是变异 m17：把产品的改道分支置空，`colfit\` 与 `pickerprobe\`
+> 目录立刻重新出现。**注意**：那两个探针自身仍然全绿 —— 说明既有测试对
+> 「污染用户配置」这个维度是零覆盖的，这一项是唯一能抓到它的手段。
+
+## 资源键完整性 + 语言纯度（langkeycheck）
+
+`localization_check.py` 查的是**结构**：三语键集合一致、`{n}` 占位符数量匹配。
+它有一个盲区：**三份词典同时写错同一个键时，它会报「一致」**。
+
+`langkeycheck.py` 补三件结构检查看不到的事：
+
+```
+LK1  代码取用的键必须存在于词典（三语都缺时会静默回落，结构检查照样通过）
+LK2  语言纯度：某一语言的文本里混入了别种文字
+LK3  同键在不同语言里长度悬殊 / 出现空串（疑似漏翻）
+```
+
+```powershell
+python langkeycheck.py ..\HashChecker_WPF\HashChecker
+```
+
+> **LK2 抓到了真问题**：en-US 段原有 **12 条**值里嵌着中文「摘要」，英文界面上
+> 会显示 `Every file in the list already has a 摘要 value.` 这种半中半英的句子。
+> 结构检查完全发现不了 —— 三份词典的键集合与占位符都是对的。
+> 按项目既有用词惯例（校验记录用 checksum、单个值用 digest）全部改掉后，
+> 现在 LK2 报 0。
+>
+> 判定方式是按 Unicode 区块识别文字种类（汉字 / 假名 / 谚文 / 拉丁），
+> 不是按字符白名单 —— 后者漏一个字就整条失效。
+
+## 安全删除（safe_ops）
+
+测试脚本手里握着「删目录」的权限，而路径是拼出来的。一次拼错就可能是把源码目录、
+把用户真实配置目录整个删掉，这类事故没有 undo。本项目已经两次因为路径处理不当
+动了不该动的东西（探针把配置写进 `%LOCALAPPDATA%`、变异测试把 `%TEMP%` 字面量
+当相对路径建到了工程里）。
+
+所以删除一律走白名单，**五条全过才删**：
+
+```
+1. 目标必须在受控根目录之内（默认 %TEMP%）
+2. 目标不能是受控根目录本身，更不能是根的上级
+3. 目标路径里必须含标记串（默认 HashCheckerTest）
+4. 目录里有源码类文件（.cs/.py/.xaml/.csproj/.sln/…）直接拒绝
+5. 任何一条不满足就抛异常，绝不"尽力删一点"
+```
+
+```powershell
+python safe_ops.py        # 直接运行 = 自检（五条闸门的正反两侧都跑一遍）
+```
+
+> 一个安全工具如果自己没被验证过，出问题时你无法判断是「真的安全」还是
+> 「检查根本没生效」。所以 `safe_ops.py` 直接运行时跑的是自检：
+> 合法临时目录要通过，工程内目录 / 无标记串 / `%TEMP%` 根本身 / 含源码文件
+> 这四个反例全部要被拒。五项都过才打印「自检全部通过」。
+
+## 启发式探测（heuristic_probe）
+
+前面的套件都是**回归**：断言已知契约不退化，红了就是退化。
+`heuristic_probe.py` 是**探索**：拿产品源码与 README 里写明的承诺，
+去撞既有用例没覆盖的边界，把「看起来不对劲」的行为逐条摊出来交给人判断。
+所以它的退出码 1 **不代表一定是 bug**。
+
+覆盖 8 组、27 项：解析宽容性 / 摘要规范化 / 设置容错 / 路径边界 /
+多编码 / 写出读回往返 / 引擎契约 / 本地化纯度。
+
+```powershell
+python heuristic_probe.py                 # 退出码 0 = 无异常，1 = 有可疑项需人判
+python heuristic_probe.py --only path,engine
+```
+
+> **一个必须记住的坑**：判据不能建立在注释上。第一版 `engine` 那组用
+> `"Stopwatch" in text and "TickCount" not in text` 判断节流方式，
+> 结果把 `Stopwatch` 换成 `Environment.TickCount` 之后**仍然报 OK** ——
+> 因为注释里有一大段在解释「为什么不用 TickCount」，`Stopwatch` 这个词还在。
+> 现在先用 `strip_comments()` 剔掉注释再判。工具自己没验证过就等于没有。
 
 ## 本地化格式参数
 

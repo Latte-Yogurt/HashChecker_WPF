@@ -21,7 +21,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from suffix_list import collect_extensions   # noqa: E402
 
-LOC = HERE.parent / "HashChecker" / "Localization.cs"
+LOC = HERE.parent / "HashChecker_WPF" / "HashChecker" / "Localization.cs"
 
 # 每种语言的「校验记录」说法
 LABEL = {"zh-CN": "校验记录", "zh-TW": "校驗記錄", "en-US": "Checksum record"}

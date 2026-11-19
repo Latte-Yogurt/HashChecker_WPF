@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -33,6 +33,7 @@ class LocProbe
     [STAThread]
     static int Main(string[] args)
     {
+        RedirectSettingsToTemp();
         if (args.Length < 1)
         {
             Console.WriteLine("用法: locprobe.exe <HashChecker.exe> [工作目录] [--section all|v07|v08|v10]");
@@ -183,8 +184,8 @@ class LocProbe
             Console.WriteLine("");
             Console.WriteLine("  --- 程序集版本 ---");
             Version asmVer = asm.GetName().Version;
-            Check("程序集版本不低于 1.2.0.0（本次性能版）",
-                asmVer != null && asmVer >= new Version(1, 2, 0, 0),
+            Check("程序集版本不低于 1.3.0.0（1.3.0 合并版）",
+                asmVer != null && asmVer >= new Version(1, 3, 0, 0),
                 "实际 = " + asmVer);
             try
             {
@@ -254,5 +255,26 @@ class LocProbe
         string s = "";
         foreach (string i in items) s += (s.Length == 0 ? "" : ",") + i;
         return s;
+    }
+
+    /// <summary>
+    /// 把配置目录改道到临时目录。必须在触碰产品任何类型之前调用 ——
+    /// 探针用 LoadFrom 载入产品程序集后，产品会拿「入口程序集名」当配置目录名，
+    /// 那个名字就是本探针，配置会落到 %LOCALAPPDATA%\<探针名>\ 里，
+    /// 每跑一次就污染一次真实用户配置。
+    /// </summary>
+    static void RedirectSettingsToTemp()
+    {
+        try
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "HashChecker", "settings-" + Path.GetFileNameWithoutExtension(
+                System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName));
+            Directory.CreateDirectory(dir);
+            Environment.SetEnvironmentVariable("HASHCHECKER_SETTINGS_DIR", dir);
+        }
+        catch
+        {
+            // 改道失败不该让探针跑不起来：最坏退回原位，测试结论不受影响。
+        }
     }
 }
