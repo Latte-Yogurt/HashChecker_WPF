@@ -14,15 +14,15 @@
 
 ### What it is
 
-A Windows GUI checksum verifier. One window, seventeen hash algorithms, and it
+A Windows GUI checksum verifier. One window, eighteen hash algorithms, and it
 reads the checksum records other tools leave behind.
 
 Drag files or `.sha256` / `.md5` / `.sha3-512` records into the window, or pass
 them on the command line. The list fills up, the values get computed, and every
 row is judged against the saved value it found.
 
-- Seventeen algorithms: MD5, SHA-1, the whole SHA-2 family, the whole SHA3
-  family, BLAKE2, CRC-32 and CRC-64.
+- Eighteen algorithms: MD5, SHA-1, the whole SHA-2 family, the whole SHA3
+  family, BLAKE2, BLAKE3, CRC-32 and CRC-64.
 - Reads records written by other tools: `hash *file`, `hash  file`,
   `name = hash`, `SHA256 (name) = hash`, quoted names, relative sub-folders.
 - Tolerant about encoding: UTF-8, UTF-8 with BOM, UTF-16 (with or without BOM),
@@ -89,9 +89,19 @@ HashChecker_WPF/
 │   │   └── HashValues.cs            value formatting and comparison
 │   └── Services/
 │       ├── HashAlgorithms.cs        the catalogue: ids, suffixes, aliases
-│       ├── HashCores.cs             MD5/SHA-1/SHA-2/SHA-224 kernels
-│       ├── HashCores2.cs            SHA3 (Keccak), CRC-32, CRC-64
-│       ├── HashCores3.cs            BLAKE2s, BLAKE2b
+│       ├── Cores/                   one file per algorithm (23 files)
+│       │   ├── IHashCore.cs         the incremental-kernel interface
+│       │   ├── FrameworkCore.cs     base class wrapping HashAlgorithm
+│       │   ├── Md5Core.cs / Sha1Core.cs / Sha256Core.cs /
+│       │   │   Sha384Core.cs / Sha512Core.cs      framework-backed
+│       │   ├── Sha224Core.cs                     SHA-2, 32-bit words
+│       │   ├── Sha512FamilyCore.cs               shared SHA-512 machinery
+│       │   ├── Sha512T224Core.cs / Sha512T256Core.cs
+│       │   ├── Sha3Core.cs                       shared Keccak sponge
+│       │   ├── Sha3_224Core.cs … Sha3_512Core.cs
+│       │   ├── Blake2sCore.cs / Blake2bFamilyCore.cs / Blake3Core.cs
+│       │   ├── Blake2b256Core.cs / Blake2b512Core.cs
+│       │   └── Crc32Core.cs / Crc64Core.cs
 │       ├── HashingEngine.cs         parallel hashing, progress
 │       ├── ChecksumFile.cs          record parsing and writing
 │       ├── ChecksumResolver.cs      record ↔ file lookup
@@ -204,13 +214,13 @@ otherwise.
 | `.sha384` | SHA-384 | `.sha3-384` | SHA3-384 |
 | `.sha512` | SHA-512 | `.sha3-512` | SHA3-512 |
 | `.blake2s` | BLAKE2s-256 | `.blake2b-256` | BLAKE2b-256 |
-| `.blake2b` | BLAKE2b-512 | `.crc32` | CRC-32 |
-| `.crc64` | CRC-64 | | |
+| `.blake2b` | BLAKE2b-512 | `.blake3` | BLAKE3 |
+| `.crc32` | CRC-32 | `.crc64` | CRC-64 |
 
-Other spellings are accepted too: `.sha256sum`, `.sha2`, `.b2s`, `.crc`,
-`.sfv`. A container suffix is peeled once first, so `hash.md5.txt` still reads
-as MD5. A bare `.sha3` means SHA3-256, since without a bit count there is
-nothing else it could mean.
+Other spellings are accepted too: `.sha256sum`, `.sha2`, `.b2s`, `.blake3sum`,
+`.b3`, `.crc`, `.sfv`. A container suffix is peeled once first, so
+`hash.md5.txt` still reads as MD5. A bare `.sha3` means SHA3-256, since without
+a bit count there is nothing else it could mean.
 
 A record does not have to spell the filename the way the disk does. If the record
 says `report` and the disk has `report.txt`, that is a match, and so is the other
@@ -257,21 +267,112 @@ The kernels are:
 
 | Source | Algorithms |
 |---|---|
-| .NET Framework (`BuiltInCore` adapter) | MD5, SHA-1, SHA-256, SHA-384, SHA-512 |
+| .NET Framework (`FrameworkCore` subclasses) | MD5, SHA-1, SHA-256, SHA-384, SHA-512 |
 | Written here, SHA-2 64-bit word | SHA-512/224, SHA-512/256 |
 | Written here, SHA-2 32-bit word | SHA-224 |
 | Written here, Keccak-f[1600] sponge | SHA3-224, SHA3-256, SHA3-384, SHA3-512 |
-| Written here | BLAKE2s-256, BLAKE2b-256 |
-| Written here, table driven | CRC-32/ISO-HDLC, CRC-64/XZ |
+| Written here | BLAKE2s-256, BLAKE2b-256, BLAKE2b-512 |
+| Written here, Merkle tree over 1 KiB chunks | BLAKE3-256 |
+| Written here, table driven | CRC-32/ISO-HDLC, CRC-64-XZ |
 
 Framework algorithms are not reimplemented: the ones that ship with .NET are
 already validated, and rewriting them buys nothing but risk. The rest are
-written here because .NET Framework 4.7.2 has no SHA-3, no BLAKE2, and its
+written here because .NET Framework 4.7.2 has no SHA-3, no BLAKE2, no BLAKE3, and its
 `HashAlgorithm.Create` does not know those names at all.
 
 Every kernel must be correct on empty input, on one byte, on exactly one block,
 on one block plus one byte, and it must stream — memory use does not grow with
 file size. The test probes in `testtools/` check exactly that.
+
+### One algorithm, one file
+
+`Services/Cores/` holds **23 files, one per algorithm** (plus `IHashCore` and the
+shared machinery classes). The kernels used to live in three files named
+`HashCores.cs` / `HashCores2.cs` / `HashCores3.cs`, grouped by when they were
+written rather than by what they are: SHA-224 sat next to MD5, BLAKE3 next to
+BLAKE2s, and a change to any one of them meant editing a file that held six
+unrelated algorithms.
+
+The split is not cosmetic — it changes what a reader has to hold in their head:
+
+| Before | After |
+|---|---|
+| `HashCores.cs` — SHA-2, SHA-224, and the framework adapter in one file | `Sha224Core.cs`, `Sha512FamilyCore.cs`, `FrameworkCore.cs`, … |
+| `HashCores2.cs` — Keccak, CRC-32, CRC-64 | `Sha3Core.cs`, `Crc32Core.cs`, `Crc64Core.cs` |
+| `HashCores3.cs` — BLAKE2s, BLAKE2b, BLAKE3 | one file each |
+| MD5 / SHA-1 / SHA-256 / SHA-384 / SHA-512 shared `BuiltInCore`, distinguished only by a factory delegate | `Md5Core` / `Sha1Core` / `Sha256Core` / `Sha384Core` / `Sha512Core`, each stating its own algorithm |
+
+**Four** abstract classes remain shared, and every one of them is a *family*
+base — it holds the compression function and constant tables, never "which
+algorithm this is":
+
+| Base class | Subclasses | What is shared |
+|---|---|---|
+| `FrameworkCore` | `Md5Core`, `Sha1Core`, `Sha256Core`, `Sha384Core`, `Sha512Core` | The `HashAlgorithm` → `IHashCore` adapter; each subclass supplies one line returning its own algorithm object |
+| `Sha512FamilyCore` | `Sha512T224Core`, `Sha512T256Core` | SHA-512's 80-round compression function and round constants, parameterised by an IV table |
+| `Sha3Core` | `Sha3_224Core`, `Sha3_256Core`, `Sha3_384Core`, `Sha3_512Core` | Keccak-f[1600]'s 24 rounds; only the rate and output length differ |
+| `Blake2bFamilyCore` | `Blake2b256Core`, `Blake2b512Core` | BLAKE2b's 12-round compression function and sigma table |
+
+BLAKE2b is worth calling out because it was the last holdout. It used to be a
+single instantiable `Blake2bCore(int digestBytes)`, with the catalogue creating
+it twice — `new Blake2bCore(32)` for `blake2b-256` and `new Blake2bCore(64)` for
+`blake2b-512`. That is exactly the coupling this refactor set out to remove: two
+algorithms behind one class name, distinguished by a constructor argument. It now
+follows the same shape as the other three families, and **every concrete core in
+the project takes zero constructor arguments** — a core's identity is its type,
+not its parameters.
+
+Duplicating the round constants across those subclasses would not make any single
+algorithm easier to find; it would only make a transcription error easier to
+introduce. The line is drawn at "does this class know *which* algorithm it is":
+a base class may not, a concrete class must.
+
+> **A dead class was removed at the same time.** The old `Sha512Core` was a
+> hand-written SHA-512 that nothing referenced — the catalogue hashed SHA-512
+> through the framework. Keeping it suggested the product used a home-grown
+> SHA-512, which contradicts the table above. There is now exactly one class
+> named `Sha512Core`, and it is the framework-backed one.
+
+`hashprobe` guards the invariant two ways. It maps each algorithm id to a class
+name directly (`"md5"` → `Md5Core`, `"sha3-256"` → `Sha3_256Core`, …), so
+renaming or merging two cores makes the probe report a missing type rather than
+silently testing the wrong thing. And its instance factory is now a bare
+`GetConstructor(Type.EmptyTypes)` — no per-type special-casing. If a future core
+needs a constructor argument to know which algorithm it is, that factory stops
+working, which is the point.
+
+### Why BLAKE3 is not just "BLAKE2 with another constant"
+
+The compression function is nearly the same — 32-bit words, seven rounds instead
+of ten or twelve, the same `G` rotation amounts BLAKE2s uses. What differs is the
+**structure around it**, and that is where an implementation goes wrong silently:
+
+- **It hashes a tree, not a stream.** Input is cut into 1 KiB chunks. Each chunk
+  is hashed by blocks into a chaining value; chunk chaining values are then
+  paired up into parent nodes, and the root node's first 8 words are the digest.
+  Getting the tree shape wrong (say, merging chunks left-to-right into a single
+  chain) produces a well-formed 256-bit value that is simply not BLAKE3.
+- **A full chunk is not necessarily the last one.** `CHUNK_END` goes on the final
+  block of every chunk, and `ROOT` goes only on the very last compression of the
+  whole tree. So the buffer cannot be flushed the moment it fills — the hasher
+  has to hold a complete chunk until more data arrives to prove it is not the end.
+- **The chunk counter is part of every block compression.** Two identical 1 KiB
+  blocks at different offsets hash differently. The counter is split across two
+  state words (`v12`/`v13`) as low and high halves.
+
+The implementation keeps a stack of chaining values instead of buffering the
+whole input. When a chunk completes, its chaining value is merged upward as long
+as the running chunk count is even, which reproduces the reference tree shape
+exactly while using O(log n) memory. For a 1 GB file that is a stack of at most
+20 entries.
+
+One performance note, because it cost a 5× regression before it was fixed: the
+sixteen state words have to live in locals for the whole seven rounds. Running
+`G` directly against a `uint[16]` field array gives the JIT no way to prove the
+indices do not alias, so every read and write goes back to memory. The same
+arithmetic written against locals in one method body runs roughly five times
+faster, and it is why the seven rounds are unrolled with the message schedule
+written out rather than permuted in place through a lookup table.
 
 Records are decoded tolerantly because they come from everywhere. The order
 matters: BOM first, then UTF-16 without a BOM (judged by where the NUL bytes
@@ -292,11 +393,11 @@ would drag a large assembly into a portable tool for the sake of ten flat keys.
 
 ### 这是什么
 
-一个 Windows 图形界面的哈希校验工具。一个窗口，十七种算法，并且能读别的工具留下的校验记录。
+一个 Windows 图形界面的哈希校验工具。一个窗口，十八种算法，并且能读别的工具留下的校验记录。
 
 把文件或 `.sha256` / `.md5` / `.sha3-512` 之类的校验记录拖进窗口，或者用命令行传进来。列表填好，值算出来，每一行都会跟它找到的保存值比对。
 
-- 十七种算法：MD5、SHA-1、SHA-2 全系、SHA3 全系、BLAKE2、CRC-32 与 CRC-64。
+- 十八种算法：MD5、SHA-1、SHA-2 全系、SHA3 全系、BLAKE2、BLAKE3、CRC-32 与 CRC-64。
 - 能读别的工具写的记录：`hash *file`、`hash  file`、`name = hash`、`SHA256 (name) = hash`、带引号的文件名、相对子目录。
 - 编码宽容：UTF-8、带 BOM 的 UTF-8、UTF-16（有无 BOM）、UTF-32、GB18030、GBK、Big5、Shift_JIS、EUC-KR。
 - 双向查找：拖进记录，它去找记录里写的文件；拖进文件，它去找提到这个文件的记录。
@@ -351,9 +452,19 @@ HashChecker_WPF/
 │   │   └── HashValues.cs            值的格式化与比较
 │   └── Services/
 │       ├── HashAlgorithms.cs        算法目录：标识、后缀、别名
-│       ├── HashCores.cs             MD5/SHA-1/SHA-2/SHA-224 内核
-│       ├── HashCores2.cs            SHA3（Keccak）、CRC-32、CRC-64
-│       ├── HashCores3.cs            BLAKE2s、BLAKE2b
+│       ├── Cores/                   一个算法一个文件（23 个）
+│       │   ├── IHashCore.cs         增量内核接口
+│       │   ├── FrameworkCore.cs     包装 HashAlgorithm 的基类
+│       │   ├── Md5Core.cs / Sha1Core.cs / Sha256Core.cs /
+│       │   │   Sha384Core.cs / Sha512Core.cs      框架实现
+│       │   ├── Sha224Core.cs                      SHA-2，32 位字
+│       │   ├── Sha512FamilyCore.cs                SHA-512 共用的压缩函数
+│       │   ├── Sha512T224Core.cs / Sha512T256Core.cs
+│       │   ├── Sha3Core.cs                        Keccak 海绵结构（共用）
+│       │   ├── Sha3_224Core.cs … Sha3_512Core.cs
+│       │   ├── Blake2sCore.cs / Blake2bFamilyCore.cs / Blake3Core.cs
+│       │   ├── Blake2b256Core.cs / Blake2b512Core.cs
+│       │   └── Crc32Core.cs / Crc64Core.cs
 │       ├── HashingEngine.cs         并行计算、进度
 │       ├── ChecksumFile.cs          记录解析与写入
 │       ├── ChecksumResolver.cs      记录 ↔ 文件查找
@@ -432,10 +543,10 @@ msbuild HashChecker.sln /t:Rebuild /p:Configuration=Release
 | `.sha384` | SHA-384 | `.sha3-384` | SHA3-384 |
 | `.sha512` | SHA-512 | `.sha3-512` | SHA3-512 |
 | `.blake2s` | BLAKE2s-256 | `.blake2b-256` | BLAKE2b-256 |
-| `.blake2b` | BLAKE2b-512 | `.crc32` | CRC-32 |
-| `.crc64` | CRC-64 | | |
+| `.blake2b` | BLAKE2b-512 | `.blake3` | BLAKE3 |
+| `.crc32` | CRC-32 | `.crc64` | CRC-64 |
 
-别的写法也认：`.sha256sum`、`.sha2`、`.b2s`、`.crc`、`.sfv`，以及 `hash.md5.txt` 这种容器后缀 —— 会先剥一层 `.txt` 再认算法。`.sha3` 归 SHA3-256，因为它不带位数就没法指定别的。
+别的写法也认：`.sha256sum`、`.sha2`、`.b2s`、`.blake3sum`、`.b3`、`.crc`、`.sfv`，以及 `hash.md5.txt` 这种容器后缀 —— 会先剥一层 `.txt` 再认算法。`.sha3` 归 SHA3-256，因为它不带位数就没法指定别的。
 
 记录里写的文件名不必跟磁盘上一字不差。记录里写 `report`、磁盘上是 `report.txt`，算命中，反过来也算。但不同扩展名永远不算命中：`.zip` 不会被当成 `.exe`，否则就去算错文件了。
 
@@ -461,16 +572,59 @@ msbuild HashChecker.sln /t:Rebuild /p:Configuration=Release
 
 | 来源 | 算法 |
 |---|---|
-| .NET 框架（`BuiltInCore` 适配层） | MD5、SHA-1、SHA-256、SHA-384、SHA-512 |
+| .NET 框架（`FrameworkCore` 的五个子类） | MD5、SHA-1、SHA-256、SHA-384、SHA-512 |
 | 自研，SHA-2 64 位字 | SHA-512/224、SHA-512/256 |
 | 自研，SHA-2 32 位字 | SHA-224 |
 | 自研，Keccak-f[1600] 海绵 | SHA3-224、SHA3-256、SHA3-384、SHA3-512 |
-| 自研 | BLAKE2s-256、BLAKE2b-256 |
+| 自研 | BLAKE2s-256、BLAKE2b-256、BLAKE2b-512 |
+| 自研，1024 字节 chunk 的 Merkle 树 | BLAKE3-256 |
 | 自研，查表位运算 | CRC-32/ISO-HDLC、CRC-64/XZ |
 
-框架自带的算法不重写：.NET 自带的那几个已经验证过，重写只买到风险。其余的是自己写的，因为 .NET Framework 4.7.2 没有 SHA-3、没有 BLAKE2，它的 `HashAlgorithm.Create` 也根本不认识这些名字。
+框架自带的算法不重写：.NET 自带的那几个已经验证过，重写只买到风险。其余的是自己写的，因为 .NET Framework 4.7.2 没有 SHA-3、没有 BLAKE2、没有 BLAKE3，它的 `HashAlgorithm.Create` 也根本不认识这些名字。
 
 每个内核都必须对空输入、一个字节、正好一个块、一个块加一个字节都算准，而且必须流式 —— 内存占用不随文件变大。`testtools/` 里的探针就是查这些。
+
+### 一个算法一个文件
+
+`Services/Cores/` 下是**23 个文件，一个算法一个**（外加 `IHashCore` 与四个算法族基类）。这些内核原来挤在 `HashCores.cs` / `HashCores2.cs` / `HashCores3.cs` 三个文件里，按写入的先后分组而不是按「它是什么」：SHA-224 与 MD5 挨着，BLAKE3 与 BLAKE2s 挨着，改其中任何一个都要动一个装着六个互不相关算法的文件。
+
+拆开不只是好看，它改变的是读代码的人要在脑子里同时装着多少东西：
+
+| 拆分前 | 拆分后 |
+|---|---|
+| `HashCores.cs` —— SHA-2、SHA-224、框架适配层混在一个文件 | `Sha224Core.cs`、`Sha512FamilyCore.cs`、`FrameworkCore.cs` … |
+| `HashCores2.cs` —— Keccak、CRC-32、CRC-64 | `Sha3Core.cs`、`Crc32Core.cs`、`Crc64Core.cs` |
+| `HashCores3.cs` —— BLAKE2s、BLAKE2b、BLAKE3 | `Blake2sCore.cs`、`Blake2b256Core.cs`、`Blake2b512Core.cs`、`Blake3Core.cs` |
+| MD5 / SHA-1 / SHA-256 / SHA-384 / SHA-512 共用一个 `BuiltInCore`，只靠工厂委托区分 | `Md5Core` / `Sha1Core` / `Sha256Core` / `Sha384Core` / `Sha512Core`，各自写明自己是哪个算法 |
+
+**四个**抽象基类是有意保留的，且每一个都是「算法族」基类 —— 装的是压缩函数与常量表，从不装「我是哪个算法」：
+
+| 基类 | 子类 | 共用的是什么 |
+|---|---|---|
+| `FrameworkCore` | `Md5Core`、`Sha1Core`、`Sha256Core`、`Sha384Core`、`Sha512Core` | `HashAlgorithm` → `IHashCore` 的适配；每个子类只提供一行「返回自己那个算法对象」 |
+| `Sha512FamilyCore` | `Sha512T224Core`、`Sha512T256Core` | SHA-512 的 80 轮压缩函数与轮常量，靠 IV 表参数化 |
+| `Sha3Core` | `Sha3_224Core`、`Sha3_256Core`、`Sha3_384Core`、`Sha3_512Core` | Keccak-f[1600] 的 24 轮；只有速率与输出长度不同 |
+| `Blake2bFamilyCore` | `Blake2b256Core`、`Blake2b512Core` | BLAKE2b 的 12 轮压缩函数与 sigma 表 |
+
+BLAKE2b 值得单独说，因为它是最后一块没拆干净的地方。它原来是一个可实例化的 `Blake2bCore(int digestBytes)`，目录里造了两次 —— `blake2b-256` 用 `new Blake2bCore(32)`、`blake2b-512` 用 `new Blake2bCore(64)`。这正是这次重构要消除的那种耦合：**两个算法躲在同一个类名后面，靠构造参数区分**。现在它与另外三个家族同形，而且**全工程每个具体内核都是无参构造** —— 内核的身份是它的类型，不是它的参数。
+
+在那些子类之间复制轮常量不会让任何一个算法更好找，只会让抄错更容易发生。分界线在「这个类知不知道自己是哪个算法」：基类不许知道，具体类必须知道。
+
+> **同时删掉了一个死类。** 原来的 `Sha512Core` 是一份没人引用的自研 SHA-512 —— 目录里的 SHA-512 走的是框架实现。留着它会让人以为产品用的是自研 SHA-512，与上面那张表直接矛盾。现在全工程只有一个 `Sha512Core`，且是框架版。
+
+`hashprobe` 从两个方向守着这条不变量。它把算法 id 直接映射到类名（`"md5"` → `Md5Core`、`"sha3-256"` → `Sha3_256Core` …），一旦改名或把两个内核合并，探针会报「找不到类型」，而不是静悄悄地去测别的东西。它的实例工厂现在是一句裸的 `GetConstructor(Type.EmptyTypes)`，没有任何按类型名特判 —— 将来某个内核如果又要靠构造参数才知道自己是谁，这个工厂就会直接失败，这正是想要的效果。
+
+### BLAKE3 为什么不是「换个常量的 BLAKE2」
+
+压缩函数几乎一样 —— 同样是 32 位字、同样用 BLAKE2s 的那组 `G` 旋转量，只是轮数固定为七轮。真正不同的是**外面的结构**，而实现恰恰是在这里出错且不报错：
+
+- **它算的是一棵树，不是一条流。** 输入按 1 KiB 切成 chunk；chunk 内按 64 字节分块压成链值，chunk 之间再两两配对压成父节点，根节点压缩后取前 8 个字就是摘要。树形搞错了（比如把 chunk 从左到右串成一条链）算出来的仍是一个合法的 256 位值，但它不是 BLAKE3。
+- **填满一个 chunk 不等于它就是最后一个。** `CHUNK_END` 加在每个 chunk 的最后一块上，`ROOT` 只加在整棵树最后一次压缩上。所以缓冲区一满不能立刻结算 —— 必须留着一整个 chunk，等后续数据到了才能确定它不是结尾。
+- **chunk 序号参与每一次块压缩。** 同样内容的两个 1 KiB 块，出现在不同偏移处就是不同的值。计数器拆成低 32 位与高 32 位放在两个状态字（`v12`/`v13`）里。
+
+实现里用的是一条链值栈，而不是把整份输入缓存下来：一个 chunk 完成时，只要「已完成的 chunk 数」是偶数就向上合并一层，这样复现出的树形与参考实现完全一致，而内存是 O(log n)。1 GB 的文件最多用到 20 层。
+
+还有一处性能教训，因为它曾经导致 5 倍的退化：十六个状态字必须在七轮里一直住在局部变量里。直接拿 `uint[16]` 实例字段去跑 `G`，JIT 无法证明下标之间不重叠，于是每一次读写都回到内存；同样的算术写在方法体内的局部变量上大约快五倍。七轮展开、消息排列直接写成字面量而不是用查表置换，原因就在这里。
 
 记录解码宽容，因为它们来自四面八方。顺序是有讲究的：先看 BOM，再看没有 BOM 的 UTF-16（靠 0x00 的位置判断），再试严格 UTF-8，最后才是旧代码页。UTF-16 必须排在 UTF-8 前面：它的字节流能被 UTF-8「成功」解成一串夹着 NUL 的文本，整份记录会被解析成空。
 
