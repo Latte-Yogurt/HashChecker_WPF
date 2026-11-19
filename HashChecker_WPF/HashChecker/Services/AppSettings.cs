@@ -73,15 +73,27 @@ namespace HashChecker.Services
         /// 用 LocalApplicationData 而不是 Roaming：这里存的是窗口坐标与线程数这类
         /// 与机器绑定的值，漫游到别的机器会把窗口放到屏幕之外。
         /// 目录名取程序集名，便携改名后配置目录跟着走，不会串到别人的配置里。
+        ///
+        /// 环境变量 HASHCHECKER_SETTINGS_DIR 存在时整段改道到该目录。
+        /// 测试探针用 Assembly.LoadFrom 载入本程序集，此时 GetEntryAssembly() 返回的是
+        /// **探针自己**的名字，配置就会落到 %LOCALAPPDATA%\&lt;探针名&gt;\ —— 每跑一个探针
+        /// 就多一个真实用户配置目录。这条改道让工具把配置写进自己的临时目录，
+        /// 用户真正的 settings.json 一次都不会被碰。
         /// </summary>
         public static string SettingsFolder
         {
             get
             {
+                string redirect = Environment.GetEnvironmentVariable(SettingsDirVariable);
+                if (!string.IsNullOrEmpty(redirect)) return redirect;
+
                 string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
                 return Path.Combine(localAppData, FolderName);
             }
         }
+
+        /// <summary>改道用的环境变量名。只有测试工具会设置它，正常启动时不存在。</summary>
+        private const string SettingsDirVariable = "HASHCHECKER_SETTINGS_DIR";
 
         /// <summary>程序集名，用作配置目录名；取不到时退回固定名。</summary>
         private static string FolderName

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Security.Cryptography;
 
 namespace HashChecker.Services
 {
@@ -265,12 +264,12 @@ namespace HashChecker.Services
             var list = new List<HashAlgorithmInfo>();
 
             list.Add(Simple("md5", "MD5", 16,
-                () => new BuiltInCore(() => MD5.Create()),
+                () => new Md5Core(),
                 new[] { ".md5", ".md5sum" },
                 new[] { "md5", "md-5", "md5sum" }));
 
             list.Add(Simple("sha1", "SHA-1", 20,
-                () => new BuiltInCore(() => SHA1.Create()),
+                () => new Sha1Core(),
                 new[] { ".sha1", ".sha1sum", ".sha-1" },
                 new[] { "sha1", "sha-1", "sha1sum" }));
 
@@ -280,17 +279,17 @@ namespace HashChecker.Services
                 new[] { "sha224", "sha-224", "sha2-224", "sha2_224" }));
 
             list.Add(Simple("sha256", "SHA-256", 32,
-                () => new BuiltInCore(() => SHA256.Create()),
+                () => new Sha256Core(),
                 new[] { ".sha256", ".sha256sum", ".sha2", ".sha2-256" },
                 new[] { "sha256", "sha-256", "sha2-256", "sha256sum", "sha2" }));
 
             list.Add(Simple("sha384", "SHA-384", 48,
-                () => new BuiltInCore(() => SHA384.Create()),
+                () => new Sha384Core(),
                 new[] { ".sha384", ".sha384sum", ".sha2-384" },
                 new[] { "sha384", "sha-384", "sha2-384" }));
 
             list.Add(Simple("sha512", "SHA-512", 64,
-                () => new BuiltInCore(() => SHA512.Create()),
+                () => new Sha512Core(),
                 new[] { ".sha512", ".sha512sum", ".sha2-512" },
                 new[] { "sha512", "sha-512", "sha2-512", "sha512sum" }));
 
@@ -330,14 +329,22 @@ namespace HashChecker.Services
                 new[] { "blake2s", "blake2s-256", "b2s" }));
 
             list.Add(Simple("blake2b-256", "BLAKE2b-256", 32,
-                () => new Blake2bCore(32),
+                () => new Blake2b256Core(),
                 new[] { ".blake2b-256", ".blake2b256", ".b2b-256" },
                 new[] { "blake2b-256", "blake2b256", "b2b-256" }));
 
             list.Add(Simple("blake2b-512", "BLAKE2b-512", 64,
-                () => new Blake2bCore(64),
+                () => new Blake2b512Core(),
                 new[] { ".blake2b", ".blake2b-512", ".b2b", ".blake2" },
                 new[] { "blake2b", "blake2b-512", "b2b", "blake2" }));
+
+            // BLAKE3 只有 32 字节这一种输出，不像 BLAKE2 有 b/s 两支与可配长度，
+            // 所以首选后缀必须是独有的 .blake3，绝不能与 .blake2b / .b2b 混用：
+            // 后缀是读回时判定算法的唯一线索，混用会让 BLAKE3 的值按 BLAKE2b 认。
+            list.Add(Simple("blake3", "BLAKE3", 32,
+                () => new Blake3Core(),
+                new[] { ".blake3", ".b3", ".blake3sum" },
+                new[] { "blake3", "blake-3", "b3", "blake3sum" }));
 
             list.Add(Simple("crc32", "CRC-32", 4,
                 () => new Crc32Core(),

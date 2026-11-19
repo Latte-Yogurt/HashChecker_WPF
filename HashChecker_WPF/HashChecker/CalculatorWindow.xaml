@@ -11,7 +11,8 @@
         ShowInTaskbar="False"
         TextOptions.TextFormattingMode="Display"
         FontFamily="Microsoft YaHei UI, Segoe UI"
-        FontSize="12">
+        FontSize="12"
+        Loaded="Window_Loaded">
     <Grid Margin="14">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />

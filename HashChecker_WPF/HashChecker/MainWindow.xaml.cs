@@ -327,7 +327,7 @@ namespace HashChecker
             MenuEditStop.Header = Localization.Get("EditStop");
             MenuEditCompare.Header = Localization.Get("EditCompare");
             MenuEditCopy.Header = Localization.Get("EditCopy");
-           MenuEditCopyPath.Header = Localization.Get("EditCopyPath");
+            MenuEditCopyPath.Header = Localization.Get("EditCopyPath");
             MenuEditSelectAll.Header = Localization.Get("EditSelectAll");
 
             MenuView.Header = Localization.Get("MenuView");
@@ -358,7 +358,7 @@ namespace HashChecker
             LblStart.Text = Localization.Get("BtnStart");
             LblStop.Text = Localization.Get("BtnStop");
             LblCopy.Text = Localization.Get("BtnCopy");
-           LblLocate.Text = Localization.Get("BtnLocate");
+            LblLocate.Text = Localization.Get("BtnLocate");
             LblOptions.Text = Localization.Get("BtnOptions");
             LblSelfTest.Text = Localization.Get("BtnSelfTest");
             LblAlgorithm.Text = Localization.Get("LblAlgorithm");
@@ -372,7 +372,7 @@ namespace HashChecker
             BtnStart.ToolTip = Localization.Get("EditStart");
             BtnStop.ToolTip = Localization.Get("EditStop");
             BtnCopy.ToolTip = Localization.Get("BtnCopy");
-           BtnLocate.ToolTip = Localization.Get("BtnLocate");
+            BtnLocate.ToolTip = Localization.Get("BtnLocate");
             BtnOptions.ToolTip = Localization.Get("BtnOptions");
             BtnSelfTest.ToolTip = Localization.Get("BtnSelfTest");
 
@@ -548,7 +548,7 @@ namespace HashChecker
             BtnRemove.IsEnabled = hasSelection && !_isHashing;
             BtnClear.IsEnabled = hasItems && !_isHashing;
             BtnCopy.IsEnabled = hasSelection;
-           BtnLocate.IsEnabled = hasSelection;
+            BtnLocate.IsEnabled = hasSelection;
 
             MenuEditStart.IsEnabled = BtnStart.IsEnabled;
             MenuEditStop.IsEnabled = BtnStop.IsEnabled;
@@ -556,7 +556,7 @@ namespace HashChecker
             MenuEditClear.IsEnabled = BtnClear.IsEnabled;
             MenuEditCompare.IsEnabled = hasSelection;
             MenuEditCopy.IsEnabled = hasSelection;
-           MenuEditCopyPath.IsEnabled = hasSelection;
+            MenuEditCopyPath.IsEnabled = hasSelection;
             MenuEditSelectAll.IsEnabled = hasItems;
             MenuFileSave.IsEnabled = BtnSave.IsEnabled;
             MenuFileSaveItem.IsEnabled = hasSelection;
@@ -958,16 +958,18 @@ namespace HashChecker
 
         #endregion
 
-        #region 计算
+        #region 计算：启动
         private async void Start_Click(object sender, RoutedEventArgs e)
         {
             await BeginHashingAsync();
         }
 
+        #endregion
+
+        #region 计算：批次执行与合并投递
         /// <summary>
         /// 只算还没有当前值的行，已有值的不重算，避免重复扫描大文件；
         /// 计算本身丢到线程池，进度与结果经 Dispatcher 切回 UI 线程。
-        ///
         /// 结果与进度都**合并投递**：引擎保证按列表顺序交付，这里攒成一批、
         /// 每次只投一次 Dispatcher，而不是每行结果、每次进度各投一次。
         /// 几千个文件时这一条能把跨线程投递从数万次降到数百次。
@@ -1113,7 +1115,9 @@ namespace HashChecker
                 });
             }
         }
+        #endregion
 
+        #region 计算：结果与进度回落
         /// <summary>单行结果的落地点；失败也写回该行，不打断其余行。</summary>
         private void ApplyOutcome(HashOutcome outcome)
         {
