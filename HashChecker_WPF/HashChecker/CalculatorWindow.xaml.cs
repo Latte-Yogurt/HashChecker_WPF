@@ -24,6 +24,17 @@ namespace HashChecker
             FillAlgorithmPicker();
         }
 
+        /// <summary>
+        /// 打开就把光标放进输入框：用户打开计算器就是想打字，
+        /// 焦点停在窗口本身等于白白多按一次 Tab。
+        /// 用 Loaded 而不是构造函数——构造函数里控件还没进可视树，Focus() 无效。
+        /// </summary>
+        private void Window_Loaded(object sender, RoutedEventArgs e)
+        {
+            InputText.Focus();
+            InputText.SelectAll();
+        }
+
         private void ApplyLocalization()
         {
             Title = Localization.Get("CalcTitle");

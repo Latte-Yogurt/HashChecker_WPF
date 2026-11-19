@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Security.Cryptography;
 
 namespace HashChecker.Services
 {
@@ -116,11 +115,51 @@ namespace HashChecker.Services
             get { return _all; }
         }
 
-        /// <summary>默认算法（SHA-256），没有记录可依据时用它。</summary>
+        /// <summary>
+        /// 默认算法：调用方没有指定算法时的兜底（SHA-256）。
+        ///
+        /// **要换默认算法，改下面 <see cref="DefaultAlgorithmId"/> 常量即可**，
+        /// 不要在这里另写 <c>_byId["其它标识"]</c>。全工程的「默认是谁」只由那一个常量决定，
+        /// 其余消费者都引用本属性、不再各自写死字符串：
+        ///   - AppSettings.AlgorithmId 的字段初值
+        ///   - AppSettings.Normalize 里 AlgorithmId 为空时的回落
+        ///   - CalculatorWindow 选中项的兜底
+        ///   - HashingEngine.HashFile 没有可用算法时的回落
+        ///
+        /// 标识必须存在于 <see cref="All"/> 中：写错会在**首次访问**时抛 KeyNotFoundException，
+        /// 而不是静默退回某个算法 —— 宁可启动就炸，也不要悄悄算出另一种摘要。
+        /// </summary>
         public static HashAlgorithmInfo Default
         {
-            get { return _byId["sha256"]; }
+            // ★ 改默认算法就改 DefaultAlgorithmId 这个常量（见下方定义处），本行不用动。
+            //   合法取值 = BuildCatalog 里每个条目的 id，共 18 个：
+            //     md5 / sha1 / sha224 / sha256 / sha384 / sha512 /
+            //     sha512-224 / sha512-256 /
+            //     sha3-224 / sha3-256 / sha3-384 / sha3-512 /
+            //     blake2s-256 / blake2b-256 / blake2b-512 / blake3 /
+            //     crc32 / crc64
+            //   填了不在列表里的值不会静默回落：首次访问本属性时直接抛 KeyNotFoundException。
+            get { return _byId[DefaultAlgorithmId]; }
         }
+
+        /// <summary>
+        /// 默认算法的标识（小写，与 <see cref="BuildCatalog"/> 里的 id 完全一致）。
+        ///
+        /// **这就是全工程唯一需要改的一行：换默认算法 = 改这个字符串。**
+        /// 抽成常量的目的，是让「默认算法」这件事有一个具名、可全局搜索的锚点
+        /// （搜 <c>DefaultAlgorithmId</c> 即可定位），而不是散落在多个文件里的字面量。
+        ///
+        /// 改法：
+        ///   1. 把右边的 "sha256" 换成目标算法的 id（合法值与 18 项清单见上方
+        ///      <see cref="Default"/> 的 getter 注释）；
+        ///   2. 重新编译即可 —— AppSettings、CalculatorWindow、HashingEngine
+        ///      都引用本属性或本常量，会自动跟随，不需要逐个文件改；
+        ///   3. 跑 testtools 的 hashprobe 与 run_all_tests 复验。
+        ///
+        /// 注意：本常量只在 <see cref="All"/> 构建完成后被读取，填错值时表现为
+        /// 首次访问 <see cref="Default"/> 抛 KeyNotFoundException，而不是编译错误。
+        /// </summary>
+        private const string DefaultAlgorithmId = "sha256"; // ← 改默认算法就改这一行
 
         /// <summary>按标识取算法；找不到返回 null。</summary>
         public static HashAlgorithmInfo ById(string id)
@@ -265,12 +304,12 @@ namespace HashChecker.Services
             var list = new List<HashAlgorithmInfo>();
 
             list.Add(Simple("md5", "MD5", 16,
-                () => new BuiltInCore(() => MD5.Create()),
+                () => new Md5Core(),
                 new[] { ".md5", ".md5sum" },
                 new[] { "md5", "md-5", "md5sum" }));
 
             list.Add(Simple("sha1", "SHA-1", 20,
-                () => new BuiltInCore(() => SHA1.Create()),
+                () => new Sha1Core(),
                 new[] { ".sha1", ".sha1sum", ".sha-1" },
                 new[] { "sha1", "sha-1", "sha1sum" }));
 
@@ -280,17 +319,17 @@ namespace HashChecker.Services
                 new[] { "sha224", "sha-224", "sha2-224", "sha2_224" }));
 
             list.Add(Simple("sha256", "SHA-256", 32,
-                () => new BuiltInCore(() => SHA256.Create()),
+                () => new Sha256Core(),
                 new[] { ".sha256", ".sha256sum", ".sha2", ".sha2-256" },
                 new[] { "sha256", "sha-256", "sha2-256", "sha256sum", "sha2" }));
 
             list.Add(Simple("sha384", "SHA-384", 48,
-                () => new BuiltInCore(() => SHA384.Create()),
+                () => new Sha384Core(),
                 new[] { ".sha384", ".sha384sum", ".sha2-384" },
                 new[] { "sha384", "sha-384", "sha2-384" }));
 
             list.Add(Simple("sha512", "SHA-512", 64,
-                () => new BuiltInCore(() => SHA512.Create()),
+                () => new Sha512Core(),
                 new[] { ".sha512", ".sha512sum", ".sha2-512" },
                 new[] { "sha512", "sha-512", "sha2-512", "sha512sum" }));
 
@@ -330,14 +369,22 @@ namespace HashChecker.Services
                 new[] { "blake2s", "blake2s-256", "b2s" }));
 
             list.Add(Simple("blake2b-256", "BLAKE2b-256", 32,
-                () => new Blake2bCore(32),
+                () => new Blake2b256Core(),
                 new[] { ".blake2b-256", ".blake2b256", ".b2b-256" },
                 new[] { "blake2b-256", "blake2b256", "b2b-256" }));
 
             list.Add(Simple("blake2b-512", "BLAKE2b-512", 64,
-                () => new Blake2bCore(64),
+                () => new Blake2b512Core(),
                 new[] { ".blake2b", ".blake2b-512", ".b2b", ".blake2" },
                 new[] { "blake2b", "blake2b-512", "b2b", "blake2" }));
+
+            // BLAKE3 只有 32 字节这一种输出，不像 BLAKE2 有 b/s 两支与可配长度，
+            // 所以首选后缀必须是独有的 .blake3，绝不能与 .blake2b / .b2b 混用：
+            // 后缀是读回时判定算法的唯一线索，混用会让 BLAKE3 的值按 BLAKE2b 认。
+            list.Add(Simple("blake3", "BLAKE3", 32,
+                () => new Blake3Core(),
+                new[] { ".blake3", ".b3", ".blake3sum" },
+                new[] { "blake3", "blake-3", "b3", "blake3sum" }));
 
             list.Add(Simple("crc32", "CRC-32", 4,
                 () => new Crc32Core(),

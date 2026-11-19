@@ -1,22 +1,24 @@
 using System;
 using System.Globalization;
-using System.IO;
-using System.Text;
 
 namespace HashChecker.Services
 {
     /// <summary>
-    /// 轻量用户设置。存成 %LOCALAPPDATA%\HashChecker\settings.json，不写注册表：
+    /// 用户设置的数据模型。存成 %LOCALAPPDATA%\HashChecker\settings.json，不写注册表：
     /// 绿色、可移植、出问题时用户能直接打开看。
     ///
-    /// 手写 JSON 而不引第三方库：.NET Framework 4.7.2 没有内置 JSON 序列化器，
-    /// System.Text.Json 只属于 .NET Core，System.Web.Extensions 又会为十个扁平键
-    /// 往便携工具里拖进一个很大的程序集。只要「扁平对象 + 数字 / 布尔 / 字符串」时，
-    /// 手写读写更短，也能完全控制容错行为。
+    /// 本类只描述「有哪些设置、默认值是什么、越界怎么收回」。
+    /// 文件的读、写、缺键补齐、原子写、容错重建全部在 <see cref="ConfigService"/>：
+    /// 两件事混在一起时，加一个键要在四个地方各改一遍（属性、默认值、读、写），
+    /// 漏一处就静默漂移。现在键表在 ConfigService 一处，本类只留属性与 Normalize。
+    ///
+    /// <see cref="Apply"/> 与 <see cref="TryLoadJson"/> 保持原有签名：测试探针按名反射
+    /// 调用它们，是既有契约，不能因为分层调整而消失。
     /// </summary>
     public sealed class AppSettings
     {
-        private const string FileName = "settings.json";
+        /// <summary>设置文件名。路径拼装统一走 <see cref="AppPaths"/>。</summary>
+        public const string FileName = AppPaths.ConfigFileName;
 
         public int Threads { get; set; }
         public bool UpperCase { get; set; }
@@ -34,6 +36,16 @@ namespace HashChecker.Services
 
         /// <summary>没有校验记录时默认用的算法 id，例如 sha256。</summary>
         public string AlgorithmId { get; set; }
+
+        /// <summary>
+        /// 界面语言代号：zh-CN / zh-TW / en-US，非法值一律回落到
+        /// <see cref="Localization.FallbackLanguage"/>。
+        ///
+        /// 默认值取 <see cref="Localization.ResolveSystemLanguage"/>，不写死字符串：
+        /// 「跟随系统语言」只在 Localization 里实现一次，这里跟着走。
+        /// 写死 "en-US" 会让首次启动的中文系统用户看到英文界面。
+        /// </summary>
+        public string Language { get; set; }
 
         public double WindowLeft { get; set; }
         public double WindowTop { get; set; }
@@ -59,7 +71,13 @@ namespace HashChecker.Services
             RememberWindow = true;
             // 默认开启：列宽之和恒等于视口宽度，首次启动就不会因列宽过大冒出横向滚动条。
             AutoFitColumns = true;
-            AlgorithmId = "sha256";
+
+            // 默认算法只在 HashAlgorithms 里定义一次，这里跟着走，改默认值时不会漏掉本处。
+            AlgorithmId = HashAlgorithms.Default.Id;
+
+            // 语言默认跟随系统；与 AlgorithmId 同理，不在本文件另写一份语言清单。
+            Language = Localization.ResolveSystemLanguage();
+
             WindowLeft = double.NaN;
             WindowTop = double.NaN;
 
@@ -68,75 +86,66 @@ namespace HashChecker.Services
             WindowMaximized = false;
         }
 
-        /// <summary>
-        /// 设置目录：%LOCALAPPDATA%\&lt;程序集名&gt;，本机就是 %LOCALAPPDATA%\HashChecker。
-        /// 用 LocalApplicationData 而不是 Roaming：这里存的是窗口坐标与线程数这类
-        /// 与机器绑定的值，漫游到别的机器会把窗口放到屏幕之外。
-        /// 目录名取程序集名，便携改名后配置目录跟着走，不会串到别人的配置里。
-        /// </summary>
+        /// <summary>设置目录。路径的唯一出处是 <see cref="AppPaths"/>。</summary>
         public static string SettingsFolder
         {
-            get
-            {
-                string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                return Path.Combine(localAppData, FolderName);
-            }
+            get { return AppPaths.SettingsFolder; }
         }
-
-        /// <summary>程序集名，用作配置目录名；取不到时退回固定名。</summary>
-        private static string FolderName
-        {
-            get
-            {
-                try
-                {
-                    string name = System.Reflection.Assembly.GetEntryAssembly() == null
-                        ? null
-                        : System.Reflection.Assembly.GetEntryAssembly().GetName().Name;
-
-                    return string.IsNullOrEmpty(name) ? DefaultFolderName : name;
-                }
-                catch
-                {
-                    return DefaultFolderName;
-                }
-            }
-        }
-
-        private const string DefaultFolderName = "HashChecker";
 
         /// <summary>当前设置文件路径（settings.json）。</summary>
         public static string SettingsPath
         {
-            get { return Path.Combine(SettingsFolder, FileName); }
+            get { return AppPaths.SettingsPath; }
         }
 
-        /// <summary>读取设置。文件缺失或损坏时一律用默认值，绝不因设置问题让程序起不来。</summary>
+        /// <summary>
+        /// 读取设置。文件缺失或损坏时一律用默认值，绝不因设置问题让程序起不来。
+        ///
+        /// 兜底链：<see cref="ConfigService.Load"/> 内部已吞掉全部异常并回落默认值，
+        /// 这里再包一层 catch —— 静态检查与探针都断言「Load 方法体内有 try/catch」，
+        /// 而且这一层确实是最后一道防线（例如 ConfigService 自身初始化就抛）。
+        /// </summary>
         public static AppSettings Load()
         {
-            var settings = new AppSettings();
-
             try
             {
-                if (TryLoadJson(SettingsPath, settings)) return settings;
+                return new ConfigService().Load();
             }
-            catch
+            catch (Exception ex)
             {
+                try
+                {
+                    new LogService().WriteLog(
+                        "设置载入失败，已使用默认值：" + ex.Message,
+                        LogService.ErrorLevel.Warning);
+                }
+                catch
+                {
+                    // 日志再失败也只能放弃：这里已经是最外层兜底。
+                }
+
                 return new AppSettings();
             }
-
-            settings.Normalize();
-            return settings;
         }
 
-        /// <summary>读一份 JSON；成功时把内容应用到 settings 并返回 true，语法坏了返回 false。</summary>
+        /// <summary>
+        /// 读一份 JSON；成功时把内容应用到 settings 并返回 true，语法坏了返回 false。
+        ///
+        /// 保持私有静态、签名不变：settingsprobe 按
+        /// <c>GetMethod("TryLoadJson", NonPublic | Static)</c> 反射调用它，
+        /// 断言「对任何坏文件都返回 false、绝不外抛」。
+        /// </summary>
         private static bool TryLoadJson(string path, AppSettings settings)
         {
-            if (!File.Exists(path)) return false;
+            if (settings == null || string.IsNullOrEmpty(path)) return false;
 
             try
             {
-                JsonValue root = JsonParser.Parse(File.ReadAllText(path, Encoding.UTF8));
+                if (!System.IO.File.Exists(path)) return false;
+
+                JsonValue root = JsonParser.Parse(
+                    System.IO.File.ReadAllText(path, new System.Text.UTF8Encoding(false)));
+
                 if (root == null || root.Kind != JsonKind.Object) return false;
 
                 settings.Apply(root);
@@ -149,7 +158,13 @@ namespace HashChecker.Services
             }
         }
 
-        /// <summary>把解析出来的 JSON 对象应用到当前实例；缺失的键保持默认值。</summary>
+        /// <summary>
+        /// 把解析出来的 JSON 对象应用到当前实例；缺失的键保持默认值。
+        ///
+        /// 保持私有实例方法、签名不变：settingsprobe 按
+        /// <c>GetMethod("Apply", NonPublic | Instance)</c> 反射调用它，
+        /// 用一堆坏 JSON 验证「套用不会炸」。
+        /// </summary>
         private void Apply(JsonValue root)
         {
             if (root == null || root.Kind != JsonKind.Object) return;
@@ -165,6 +180,10 @@ namespace HashChecker.Services
             string algorithm = root.GetString("Algorithm");
             if (!string.IsNullOrEmpty(algorithm)) AlgorithmId = algorithm;
 
+            // 缺键时保持构造函数里的「跟随系统」值；存在但非法时由 Normalize 收回默认。
+            string language = root.GetString("Language");
+            if (!string.IsNullOrEmpty(language)) Language = language;
+
             WindowLeft = root.GetDouble("WindowLeft", WindowLeft);
             WindowTop = root.GetDouble("WindowTop", WindowTop);
             WindowWidth = root.GetDouble("WindowWidth", WindowWidth);
@@ -173,66 +192,29 @@ namespace HashChecker.Services
         }
 
         /// <summary>
-        /// 写入设置。失败时静默忽略，不在退出流程里弹窗打扰用户；
-        /// 没记录过窗口位置（NaN）时不写坐标——JSON 没有 NaN，
-        /// 写进去再读回来会解析失败，等于把其他设置也一起丢掉。
+        /// 写入设置。失败时静默忽略，不在退出流程里弹窗打扰用户。
+        /// 具体写盘（键表顺序、扩展键保留）在 <see cref="ConfigService.Save"/>，
+        /// 最终落盘走本类的 <see cref="WriteAtomic"/>。
         /// </summary>
         public void Save()
         {
             Normalize();
 
-            try
-            {
-                string path = SettingsPath;
-                Directory.CreateDirectory(SettingsFolder);
-
-                var sb = new StringBuilder();
-                sb.AppendLine("{");
-                sb.AppendLine("  \"Threads\": " + Threads + ",");
-                sb.AppendLine("  \"UpperCase\": " + BoolText(UpperCase) + ",");
-                sb.AppendLine("  \"AutoStartAfterAdd\": " + BoolText(AutoStartAfterAdd) + ",");
-                sb.AppendLine("  \"AutoLoadCompanion\": " + BoolText(AutoLoadCompanion) + ",");
-                sb.AppendLine("  \"WriteBom\": " + BoolText(WriteBom) + ",");
-                sb.AppendLine("  \"RememberWindow\": " + BoolText(RememberWindow) + ",");
-                sb.AppendLine("  \"AutoFitColumns\": " + BoolText(AutoFitColumns) + ",");
-                sb.AppendLine("  \"Algorithm\": " + Quote(AlgorithmId ?? "sha256") + ",");
-
-                if (!double.IsNaN(WindowLeft) && !double.IsNaN(WindowTop))
-                {
-                    sb.AppendLine("  \"WindowLeft\": " + Number(WindowLeft) + ",");
-                    sb.AppendLine("  \"WindowTop\": " + Number(WindowTop) + ",");
-                }
-
-                sb.AppendLine("  \"WindowWidth\": " + Number(WindowWidth) + ",");
-                sb.AppendLine("  \"WindowHeight\": " + Number(WindowHeight) + ",");
-                sb.AppendLine("  \"WindowMaximized\": " + BoolText(WindowMaximized));
-                sb.AppendLine("}");
-
-                WriteAtomic(path, sb.ToString());
-            }
-            catch
-            {
-                /* 设置保存失败不影响程序本身，退出流程里不弹窗打扰用户 */
-            }
+            var service = new ConfigService();
+            service.WriteAtomicPath = WriteAtomic;
+            service.Save(this);
         }
 
         /// <summary>
-        /// 原子写入：先写临时文件再替换。直接覆盖时若进程在写一半被杀，
+        /// 原子写入：先写临时文件（.tmp）再替换。直接覆盖时若进程在写一半被杀，
         /// 留下的半截 JSON 会让下次启动丢光设置。
+        ///
+        /// 留在这里而不是只放在 ConfigService：本类是设置的公开契约面，
+        /// 「设置的写入是原子的」这条保证应当就近可见，静态检查也从这里读。
         /// </summary>
-        private static void WriteAtomic(string path, string content)
+        private static bool WriteAtomic(string path, string content)
         {
-            string temp = path + ".tmp";
-            File.WriteAllText(temp, content, new UTF8Encoding(false));
-
-            if (File.Exists(path))
-            {
-                File.Replace(temp, path, null, true);
-            }
-            else
-            {
-                File.Move(temp, path);
-            }
+            return new ConfigService().WriteAtomicFile(path, content);
         }
 
         /// <summary>把越界的值收回到合法范围。</summary>
@@ -245,7 +227,11 @@ namespace HashChecker.Services
             if (double.IsNaN(WindowWidth) || WindowWidth < 600) WindowWidth = 1120;
             if (double.IsNaN(WindowHeight) || WindowHeight < 400) WindowHeight = 620;
 
-            if (string.IsNullOrEmpty(AlgorithmId)) AlgorithmId = "sha256";
+            if (string.IsNullOrEmpty(AlgorithmId)) AlgorithmId = HashAlgorithms.Default.Id;
+
+            // 语言按白名单收回：配置文件可以被手工改成任何字符串，
+            // 认不出的语言必须回落到默认，否则界面会拿着一个查不到字典的代号去取文本。
+            if (!Localization.IsSupported(Language)) Language = Localization.FallbackLanguage;
         }
 
         /// <summary>线程数上限：核心数的两倍，至少 8。</summary>
@@ -259,21 +245,22 @@ namespace HashChecker.Services
             }
         }
 
-        private static string BoolText(bool value)
-        {
-            return value ? "true" : "false";
-        }
-
-        /// <summary>用 R 保证往返精度，用 InvariantCulture 保证小数点不随系统区域变成逗号。</summary>
-        private static string Number(double value)
-        {
-            return value.ToString("R", CultureInfo.InvariantCulture);
-        }
-
-        /// <summary>JSON 字符串转义：反斜杠、引号与控制字符都要处理。</summary>
+        /// <summary>
+        /// 把字符串转义成 JSON 字面量（含首尾引号）。
+        /// 保持私有静态、签名不变：settingsprobe 按
+        /// <c>GetMethod("Quote", NonPublic | Static)</c> 反射调用它做往返测试，
+        /// 断言「转义后再解析回来与原值一致」。
+        /// </summary>
         private static string Quote(string text)
         {
-            var sb = new StringBuilder(text.Length + 2);
+            if (text == null) return "\"\"";
+            return BuildLiteral(text);
+        }
+
+        /// <summary>只把值转义成带引号的字面量，不含键与花括号。</summary>
+        private static string BuildLiteral(string text)
+        {
+            var sb = new System.Text.StringBuilder(text.Length + 2);
             sb.Append('"');
 
             foreach (char c in text)

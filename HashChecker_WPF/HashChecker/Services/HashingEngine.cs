@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
-using System.Threading.Tasks;
 using HashChecker.Models;
 
 namespace HashChecker.Services
@@ -308,17 +307,6 @@ namespace HashChecker.Services
             {
                 state.Canceled = true;
                 state.Stopped = true;
-                Monitor.PulseAll(gate);
-            }
-        }
-
-        /// <summary>工作线程发现取消时统一走这里：置标志、唤醒交付线程。</summary>
-        private static void MarkCanceled(object gate, ref bool canceled, ref bool stopped)
-        {
-            lock (gate)
-            {
-                canceled = true;
-                stopped = true;
                 Monitor.PulseAll(gate);
             }
         }

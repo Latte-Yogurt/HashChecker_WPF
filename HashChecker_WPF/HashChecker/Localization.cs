@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+using System;
+using System.Collections.Generic;
 using System.Globalization;
 
 namespace HashChecker
@@ -9,7 +10,91 @@ namespace HashChecker
     /// </summary>
     public static class Localization
     {
-        private static readonly string _currentLanguage = Get_currentLanguage();
+        /// <summary>回落的语言：任何未知语言代号都归到它，避免界面出现裸键名。</summary>
+        public const string FallbackLanguage = "en-US";
+
+        /// <summary>
+        /// 受支持的语言代号白名单。**全工程只此一份**：
+        /// <see cref="IsSupported"/>、<see cref="ResolveSystemLanguage"/>、
+        /// <see cref="GetSupportedLanguages"/> 全部从它推导。
+        /// 加语言时改这里 + Texts 里的语言段，两处必须同步。
+        /// </summary>
+        private static readonly string[] _supportedLanguages = { "zh-CN", "zh-TW", "en-US" };
+
+        /// <summary>当前生效的语言代号。可由配置覆盖，见 <see cref="ApplyConfiguredLanguage"/>。</summary>
+        private static string _currentLanguage = Get_currentLanguage();
+
+        /// <summary>配置里给出的语言代号；为 null 表示还没被配置覆盖过。</summary>
+        private static string _configuredLanguage;
+
+        /// <summary>
+        /// 用配置里的 Language 覆盖当前语言。
+        ///
+        /// 为什么不是「读一次就固定」：App 启动时先载入设置、再建窗口，
+        /// 而 Localization 是静态类，字段初始化可能早于设置载入。
+        /// 这里做成幂等赋值，谁先谁后都能收敛到配置值；非法值按白名单回落。
+        ///
+        /// 返回是否真的换了语言（换了才需要重建界面文案）。
+        /// </summary>
+        public static bool ApplyConfiguredLanguage(string languageCode)
+        {
+            string wanted = IsSupported(languageCode) ? languageCode.Trim() : FallbackLanguage;
+
+            if (string.Equals(wanted, _configuredLanguage, StringComparison.Ordinal)) return false;
+
+            _configuredLanguage = wanted;
+            bool changed = !string.Equals(wanted, _currentLanguage, StringComparison.Ordinal);
+            _currentLanguage = wanted;
+            return changed;
+        }
+
+        /// <summary>当前语言代号。诊断与测试读它，避免测试自己去猜字段名。</summary>
+        public static string CurrentLanguage
+        {
+            get { return _currentLanguage; }
+        }
+
+        /// <summary>受支持的三个语言代号。返回副本，避免调用方改到内部数组导致白名单失效。</summary>
+        public static string[] GetSupportedLanguages()
+        {
+            return (string[])_supportedLanguages.Clone();
+        }
+
+        /// <summary>语言代号白名单校验。大小写不敏感，前后空白容忍。</summary>
+        public static bool IsSupported(string languageCode)
+        {
+            if (string.IsNullOrWhiteSpace(languageCode)) return false;
+
+            string code = languageCode.Trim();
+            return Array.Exists(_supportedLanguages,
+                l => l.Equals(code, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// 按系统 UI 语言挑一个受支持的代号：先精确匹配，中文再按 Hant / TW / HK 判简繁，
+        /// 其余一律回落英文。这是「配置里没有 Language 键」时的默认值来源。
+        /// </summary>
+        public static string ResolveSystemLanguage()
+        {
+            string cultureName = CultureInfo.CurrentUICulture.Name;
+            if (string.IsNullOrWhiteSpace(cultureName)) return FallbackLanguage;
+
+            foreach (string supported in _supportedLanguages)
+            {
+                if (supported.Equals(cultureName, StringComparison.OrdinalIgnoreCase)) return supported;
+            }
+
+            if (cultureName.StartsWith("zh", StringComparison.OrdinalIgnoreCase))
+            {
+                bool isTraditional = cultureName.IndexOf("Hant", StringComparison.OrdinalIgnoreCase) >= 0
+                    || cultureName.IndexOf("TW", StringComparison.OrdinalIgnoreCase) >= 0
+                    || cultureName.IndexOf("HK", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                return isTraditional ? "zh-TW" : "zh-CN";
+            }
+
+            return FallbackLanguage;
+        }
 
         private static readonly Dictionary<string, Dictionary<string, string>> Texts =
             new Dictionary<string, Dictionary<string, string>>
@@ -123,8 +208,8 @@ namespace HashChecker
                     { "MsgCopyEmpty",          "没有可复制的内容。" },
                     { "MsgNoHash",             "选中项还没有摘要值，请先执行「开始」。" },
                     { "MsgOverwrite",          "文件已存在：\n{0}\n\n是否覆盖？" },
-                    { "MsgSaveListFilter",     "校验记录 (*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.crc32;*.crc64;*.txt)|*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.crc32;*.crc64;*.txt|文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*" },
-                    { "MsgFileFilter",         "校验记录 (*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.crc32;*.crc64;*.txt)|*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.crc32;*.crc64;*.txt|文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*" },
+                    { "MsgSaveListFilter",     "校验记录 (*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.blake3;*.crc32;*.crc64;*.txt)|*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.blake3;*.crc32;*.crc64;*.txt|文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*" },
+                    { "MsgFileFilter",         "校验记录 (*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.blake3;*.crc32;*.crc64;*.txt)|*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.blake3;*.crc32;*.crc64;*.txt|文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*" },
                     { "MsgSelfTestTitle",      "自验证：本程序自身的摘要值" },
                     { "MsgSelfTestBody",       "算法：{0}\n\n程序路径：{1}\n\n摘要值：\n{2}" },
                     { "MsgPropertiesBody",     "路径：{0}\n\n大小：{1} 字节（{2}）\n修改日期：{3}\n算法：{4}\n\n当前值：\n{5}\n\n保存值：\n{6}" },
@@ -154,7 +239,7 @@ namespace HashChecker
                     { "CompareResultMatch",    "通过：摘要值一致。" },
                     { "CompareResultMismatch", "失败：摘要值不一致。" },
                     { "CompareInvalid",          "这个值不像任何已支持算法的摘要，请检查是否粘贴完整。" },
-                    { "CompareResultPending",  "请输入摘要值（MD5 / SHA-1 / SHA-2 / SHA-3 / BLAKE2 / CRC 任一）进行比对。" },
+                    { "CompareResultPending",  "请输入摘要值（MD5 / SHA-1 / SHA-2 / SHA-3 / BLAKE2 / BLAKE3 / CRC 任一）进行比对。" },
                     { "CompareOk",             "确定" },
                     { "CompareCancel",         "取消" },
                     { "ComparePaste",          "粘贴" },
@@ -169,7 +254,7 @@ namespace HashChecker
                     { "CalcHint",              "输入文本即实时计算；也可以选择一个文件计算它的摘要值。" },
 
                     { "AboutTitle",            "关于 HashChecker" },
-                    { "AboutBody",              "HashChecker\n\n版本 {0}\n\n一个多算法摘要校验工具。\n支持 MD5 / SHA-1 / SHA-2 全系 / SHA-3 全系 / BLAKE2 / CRC 的批量校验、\n校验记录读写、双向反查与结果过滤复制。" },
+                    { "AboutBody",              "HashChecker\n\n版本 {0}\n\n一个多算法摘要校验工具。\n支持 MD5 / SHA-1 / SHA-2 全系 / SHA-3 全系 / BLAKE2 / BLAKE3 / CRC 的批量校验、\n校验记录读写、双向反查与结果过滤复制。" },
 
                     { "LblAlgorithm", "算法" },
                     { "TipAlgorithmFromRecord", "算法由校验记录的文件后缀判定：{0}。" },
@@ -180,6 +265,15 @@ namespace HashChecker
                     { "MsgNoRecordHint", "同级目录下没有找到该文件的校验记录，只计算不比对。" },
                     { "OptAlgorithm", "默认算法（没有校验记录时使用）" },
                     { "AboutOk",               "确定" },
+
+                    { "LogSettingsLoadFailed", "设置载入失败，已使用默认值：{0}" },
+                    { "LogSettingsSaveFailed", "设置保存失败：{0}" },
+                    { "LogWindowPlacementFailed", "窗口位置还原失败：{0}" },
+                    { "LogWindowPlacementSaveFailed", "窗口位置保存失败：{0}" },
+                    { "LogStartup",            "程序启动，版本 {0}" },
+                    { "LogShutdown",           "程序退出" },
+                    { "LogUnknownAlgorithm",   "配置中的算法无法识别，已按 {1} 处理：{0}" },
+                    { "LogUnknownLanguage",    "配置中的语言无法识别，已按 {1} 处理：{0}" },
                 }
             },
             {
@@ -290,8 +384,8 @@ namespace HashChecker
                     { "MsgCopyEmpty",          "沒有可複製的內容。" },
                     { "MsgNoHash",             "選取項還沒有 摘要值，請先執行「開始」。" },
                     { "MsgOverwrite",          "檔案已存在：\n{0}\n\n是否覆蓋？" },
-                    { "MsgSaveListFilter",     "校驗記錄 (*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.crc32;*.crc64;*.txt)|*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.crc32;*.crc64;*.txt|文字檔 (*.txt)|*.txt|所有檔案 (*.*)|*.*" },
-                    { "MsgFileFilter",         "校驗記錄 (*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.crc32;*.crc64;*.txt)|*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.crc32;*.crc64;*.txt|文字檔 (*.txt)|*.txt|所有檔案 (*.*)|*.*" },
+                    { "MsgSaveListFilter",     "校驗記錄 (*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.blake3;*.crc32;*.crc64;*.txt)|*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.blake3;*.crc32;*.crc64;*.txt|文字檔 (*.txt)|*.txt|所有檔案 (*.*)|*.*" },
+                    { "MsgFileFilter",         "校驗記錄 (*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.blake3;*.crc32;*.crc64;*.txt)|*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.blake3;*.crc32;*.crc64;*.txt|文字檔 (*.txt)|*.txt|所有檔案 (*.*)|*.*" },
                     { "MsgSelfTestTitle",      "自驗證：本程式自身的 摘要值" },
                     { "MsgSelfTestBody",       "演算法：{0}\n\n程式路徑：{1}\n\n摘要值：\n{2}" },
                     { "MsgPropertiesBody",     "路徑：{0}\n\n大小：{1} 位元組（{2}）\n修改日期：{3}\n演算法：{4}\n\n目前值：\n{5}\n\n儲存值：\n{6}" },
@@ -321,7 +415,7 @@ namespace HashChecker
                     { "CompareResultMatch",    "通過：摘要值一致。" },
                     { "CompareResultMismatch", "失敗：摘要值不一致。" },
                     { "CompareInvalid",          "這個值不像任何已支援演算法的摘要，請檢查是否貼上完整。" },
-                    { "CompareResultPending",  "請輸入摘要值（MD5 / SHA-1 / SHA-2 / SHA-3 / BLAKE2 / CRC 任一）進行比對。" },
+                    { "CompareResultPending",  "請輸入摘要值（MD5 / SHA-1 / SHA-2 / SHA-3 / BLAKE2 / BLAKE3 / CRC 任一）進行比對。" },
                     { "CompareOk",             "確定" },
                     { "CompareCancel",         "取消" },
                     { "ComparePaste",          "貼上" },
@@ -336,7 +430,7 @@ namespace HashChecker
                     { "CalcHint",              "輸入文字即時計算；也可以選擇一個檔案計算它的 摘要值。" },
 
                     { "AboutTitle",            "關於 HashChecker" },
-                    { "AboutBody",             "HashChecker\n\n版本 {0}\n\n一個多演算法摘要校驗工具。\n支援 MD5 / SHA-1 / SHA-2 全系 / SHA-3 全系 / BLAKE2 / CRC 的批次校驗、\n校驗記錄讀寫、雙向反查與結果篩選複製。" },
+                    { "AboutBody",             "HashChecker\n\n版本 {0}\n\n一個多演算法摘要校驗工具。\n支援 MD5 / SHA-1 / SHA-2 全系 / SHA-3 全系 / BLAKE2 / BLAKE3 / CRC 的批次校驗、\n校驗記錄讀寫、雙向反查與結果篩選複製。" },
 
                     { "ColAlgorithm", "演算法" },
                     { "LblAlgorithm", "演算法" },
@@ -348,6 +442,15 @@ namespace HashChecker
                     { "MsgNoRecordHint", "同層目錄下沒有找到該檔案的校驗記錄，只計算不比對。" },
                     { "OptAlgorithm", "預設演算法（沒有校驗記錄時使用）" },
                     { "AboutOk",               "確定" },
+
+                    { "LogSettingsLoadFailed", "設定載入失敗，已使用預設值：{0}" },
+                    { "LogSettingsSaveFailed", "設定儲存失敗：{0}" },
+                    { "LogWindowPlacementFailed", "視窗位置還原失敗：{0}" },
+                    { "LogWindowPlacementSaveFailed", "視窗位置儲存失敗：{0}" },
+                    { "LogStartup",            "程式啟動，版本 {0}" },
+                    { "LogShutdown",           "程式結束" },
+                    { "LogUnknownAlgorithm",   "設定中的演算法無法識別，已按 {1} 處理：{0}" },
+                    { "LogUnknownLanguage",    "設定中的語言無法識別，已按 {1} 處理：{0}" },
                 }
             },
             {
@@ -443,11 +546,11 @@ namespace HashChecker
                     { "MsgNoticeTitle",        "Notice" },
                     { "MsgDropHint",           "Drop files, folders or checksum records (.md5 / .sha256 / .sha3-256 ...) here, or click \"Add\" on the toolbar." },
                     { "MsgNoHashingTargets",   "The list is empty, there is nothing to hash." },
-                    { "MsgNoPendingTargets",   "Every file in the list already has a 摘要 value." },
+                    { "MsgNoPendingTargets",   "Every file in the list already has a digest value." },
                     { "MsgHashRunning",        "Hashing is running. Press \"Stop\" before changing the list." },
                     { "MsgFileNotFound",       "File not found: {0}" },
-                    { "MsgSaved",              "Saved {0} 摘要 value(s) to:\n{1}" },
-                    { "MsgNothingToSave",      "No item has a computed 摘要 value." },
+                    { "MsgSaved",              "Saved {0} digest value(s) to:\n{1}" },
+                    { "MsgNothingToSave",      "No item has a computed digest value." },
                     { "MsgSaveFailed",         "Save failed: {0}" },
                     { "MsgNoSelection",        "Please select at least one item." },
                     { "MsgClearConfirm",       "Clear the whole list ({0} item(s))?" },
@@ -456,24 +559,24 @@ namespace HashChecker
                     { "MsgAutoFitOn",            "Auto-fit column widths enabled." },
                     { "MsgAutoFitOff",           "Auto-fit column widths disabled. Column widths are kept as they are." },
                     { "MsgCopyEmpty",          "Nothing to copy." },
-                    { "MsgNoHash",             "The selected item has no 摘要 value yet. Run \"Start\" first." },
+                    { "MsgNoHash",             "The selected item has no digest value yet. Run \"Start\" first." },
                     { "MsgOverwrite",          "The file already exists:\n{0}\n\nOverwrite it?" },
-                    { "MsgSaveListFilter",     "Checksum record (*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.crc32;*.crc64;*.txt)|*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.crc32;*.crc64;*.txt|Text file (*.txt)|*.txt|All files (*.*)|*.*" },
-                    { "MsgFileFilter",         "Checksum record (*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.crc32;*.crc64;*.txt)|*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.crc32;*.crc64;*.txt|Text file (*.txt)|*.txt|All files (*.*)|*.*" },
-                    { "MsgSelfTestTitle",      "Self test: 摘要 of this program" },
+                    { "MsgSaveListFilter",     "Checksum record (*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.blake3;*.crc32;*.crc64;*.txt)|*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.blake3;*.crc32;*.crc64;*.txt|Text file (*.txt)|*.txt|All files (*.*)|*.*" },
+                    { "MsgFileFilter",         "Checksum record (*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.blake3;*.crc32;*.crc64;*.txt)|*.md5;*.sha1;*.sha224;*.sha256;*.sha384;*.sha512;*.sha512-224;*.sha512-256;*.sha3-224;*.sha3-256;*.sha3-384;*.sha3-512;*.blake2s;*.blake2b-256;*.blake2b;*.blake3;*.crc32;*.crc64;*.txt|Text file (*.txt)|*.txt|All files (*.*)|*.*" },
+                    { "MsgSelfTestTitle",      "Self test: digest of this program" },
                     { "MsgSelfTestBody",       "Algorithm: {0}\n\nProgram path: {1}\n\nDigest:\n{2}" },
                     { "MsgPropertiesBody",     "Path: {0}\n\nSize: {1} bytes ({2})\nModified: {3}\nAlgorithm: {4}\n\nCurrent value:\n{5}\n\nSaved value:\n{6}" },
                     { "MsgNoValue",            "(none)" },
                     { "MsgThreadsHint",        "Range 1 - {0}. Higher is usually faster, but heavy random I/O on a hard disk can slow it down." },
                     { "MsgRecordLoaded",       "Matched {0} item(s) from the checksum record: {1} (encoding: {2})." },
                     { "MsgRecordPartial",      "{0} more record(s) had no matching file on disk." },
-                    { "MsgRecordEmpty",        "The checksum record contains no parsable 摘要 value." },
+                    { "MsgRecordEmpty",        "The checksum record contains no parsable digest value." },
                     { "MsgRecordNoTarget",     "None of the {0} record(s) could be matched to a file (a missing extension is allowed)." },
-                    { "MsgNotAChecksumFile",   "This file contains no parsable 摘要 value and is not a checksum record." },
+                    { "MsgNotAChecksumFile",   "This file contains no parsable digest value and is not a checksum record." },
 
                     { "OptTitle",              "Options" },
                     { "OptThreads",            "Threads" },
-                    { "OptUppercase",          "Show and save 摘要 values in upper case" },
+                    { "OptUppercase",          "Show and save digest values in upper case" },
                     { "OptAutoStart",          "Start hashing automatically after adding files (off by default)" },
                     { "OptAutoLoadSidecar",    "Load checksum records from the same folder automatically (same name and extension not required)" },
                     { "OptBom",                "Write checksum files with a UTF-8 BOM" },
@@ -485,18 +588,18 @@ namespace HashChecker
                     { "CompareFileLabel",      "File: " },
                     { "CompareCurrentLabel",   "Current value: " },
                     { "CompareExpectedLabel",  "Saved value: " },
-                    { "CompareInputLabel",     "摘要 to compare: " },
-                    { "CompareResultMatch",    "Passed: the 摘要 values match." },
-                    { "CompareResultMismatch", "Failed: the 摘要 values differ." },
+                    { "CompareInputLabel",     "Digest to compare: " },
+                    { "CompareResultMatch",    "Passed: the digest values match." },
+                    { "CompareResultMismatch", "Failed: the digest values differ." },
                     { "CompareInvalid",          "This value is not a digest of any supported algorithm. Check that it was pasted completely." },
-                    { "CompareResultPending",  "Enter a digest (any of MD5 / SHA-1 / SHA-2 / SHA-3 / BLAKE2 / CRC) to compare." },
+                    { "CompareResultPending",  "Enter a digest (any of MD5 / SHA-1 / SHA-2 / SHA-3 / BLAKE2 / BLAKE3 / CRC) to compare." },
                     { "CompareOk",             "OK" },
                     { "CompareCancel",         "Cancel" },
                     { "ComparePaste",          "Paste" },
 
                     { "CalcTitle",             "Digest Calculator" },
                     { "CalcTextLabel",         "Text (UTF-8):" },
-                    { "CalcResultLabel",       "摘要: " },
+                    { "CalcResultLabel",       "Digest: " },
                     { "CalcFromFile",          "From file..." },
                     { "CalcCompute",           "Compute" },
                     { "CalcCopy",              "Copy" },
@@ -504,7 +607,7 @@ namespace HashChecker
                     { "CalcHint",              "The value updates as you type; you can also pick a file to hash it." },
 
                     { "AboutTitle",            "About HashChecker" },
-                    { "AboutBody",             "HashChecker\n\nVersion {0}\n\nA multi-algorithm checksum verifier.\nSupports MD5 / SHA-1 / the whole SHA-2 and SHA-3 families / BLAKE2 / CRC,\nwith checksum record I/O, two-way lookup, filtering and copying." },
+                    { "AboutBody",             "HashChecker\n\nVersion {0}\n\nA multi-algorithm checksum verifier.\nSupports MD5 / SHA-1 / the whole SHA-2 and SHA-3 families / BLAKE2 / BLAKE3 / CRC,\nwith checksum record I/O, two-way lookup, filtering and copying." },
 
                     { "ColAlgorithm", "Algorithm" },
                     { "LblAlgorithm", "Algorithm" },
@@ -516,6 +619,15 @@ namespace HashChecker
                     { "MsgNoRecordHint", "No checksum record found next to this file; it is hashed but not compared." },
                     { "OptAlgorithm", "Default algorithm (used when there is no checksum record)" },
                     { "AboutOk",               "OK" },
+
+                    { "LogSettingsLoadFailed", "Failed to load settings; defaults are in use: {0}" },
+                    { "LogSettingsSaveFailed", "Failed to save settings: {0}" },
+                    { "LogWindowPlacementFailed", "Failed to restore the window position: {0}" },
+                    { "LogWindowPlacementSaveFailed", "Failed to save the window position: {0}" },
+                    { "LogStartup",            "Started, version {0}" },
+                    { "LogShutdown",           "Exited" },
+                    { "LogUnknownAlgorithm",   "Unrecognized algorithm in settings; using {1} instead: {0}" },
+                    { "LogUnknownLanguage",    "Unrecognized language in settings; using {1} instead: {0}" },
                 }
             }
         };
@@ -546,9 +658,7 @@ namespace HashChecker
 
         private static string Get_currentLanguage()
         {
-            var currentCulture = CultureInfo.CurrentUICulture;
-            var supported = new HashSet<string> { "zh-CN", "zh-TW", "en-US" };
-            return supported.Contains(currentCulture.Name) ? currentCulture.Name : "en-US";
+            return ResolveSystemLanguage();
         }
     }
 }
